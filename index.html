@@ -479,13 +479,20 @@ select.input{cursor:pointer;appearance:none}
 // ═══════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════
-const DEFAULT_API_BASE = 'http://45.79.124.28:8000';
+const DEFAULT_API_BASE = 'https://imperceptibly-hymnlike-leesa.ngrok-free.dev';
 let API = (localStorage.getItem('jazz_api') || DEFAULT_API_BASE || window.location.origin).replace(/\/+$/, '');
 let WS_URL = API.replace('https://', 'wss://').replace('http://', 'ws://');
 let _apiResolved = false;
 
 function isBlockedApiBase(base) {
   return false;
+}
+
+function apiFetch(url, opts = {}) {
+  return fetch(url, {
+    ...opts,
+    headers: { 'ngrok-skip-browser-warning': 'true', ...(opts.headers || {}) }
+  });
 }
 
 if (isBlockedApiBase(API)) {
@@ -506,7 +513,7 @@ async function probeApiBase(base) {
   const ctl = new AbortController();
   const tm = setTimeout(() => ctl.abort(), 3000);
   try {
-    const hr = await fetch(clean + '/health', { method:'GET', signal: ctl.signal, cache:'no-store' });
+    const hr = await apiFetch(clean + '/health', { method:'GET', signal: ctl.signal, cache:'no-store' });
     if (hr.ok) {
       const ct = (hr.headers.get('content-type') || '').toLowerCase();
       if (ct.includes('application/json')) {
@@ -514,7 +521,7 @@ async function probeApiBase(base) {
         if (d && (d.status || d.version || Array.isArray(d.features))) return true;
       }
     }
-    const r = await fetch(clean + '/auth/me', { method:'GET', signal: ctl.signal, cache:'no-store' });
+    const r = await apiFetch(clean + '/auth/me', { method:'GET', signal: ctl.signal, cache:'no-store' });
     return [200, 401, 403].includes(r.status);
   } catch {
     return false;
@@ -704,18 +711,18 @@ async function req(method, path, body, isForm) {
   if (S.token) opts.headers['Authorization'] = 'Bearer ' + S.token;
   if (body && !isForm) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   if (isForm) opts.body = body;
-  let r = await fetch(API + path, opts);
+  let r = await apiFetch(API + path, opts);
   if ([404, 405, 501].includes(r.status) && !path.startsWith('/auth/refresh')) {
     await resolveApiBase(true);
-    r = await fetch(API + path, opts);
+    r = await apiFetch(API + path, opts);
   }
   if (r.status === 401 && S.refresh) {
-    const rr = await fetch(API + '/auth/refresh', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ refresh_token: S.refresh }) });
+    const rr = await apiFetch(API + '/auth/refresh', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ refresh_token: S.refresh }) });
     if (rr.ok) {
       const d = await rr.json();
       S.token = d.access_token; S.refresh = d.refresh_token; save();
       opts.headers['Authorization'] = 'Bearer ' + S.token;
-      r = await fetch(API + path, opts);
+      r = await apiFetch(API + path, opts);
     } else { doLogout(); throw new Error('Session expired'); }
   }
   if (!r.ok) {
@@ -1175,13 +1182,19 @@ function selectSlash(cmd) {
 }
 
 // ── Connected apps quick bar ──
+const _CONNECTOR_SLASH_MAP = {
+  'google_calendar':'calendar','google_drive':'drive','google_sheets':'sheets',
+  'google_meet':'meet','microsoft_teams':'slack','outlook':'mail','bigquery':'search',
+};
+function _connSlashCmd(connId) { return _CONNECTOR_SLASH_MAP[connId] || connId; }
 function renderConnQuickBar() {
   const bar = document.getElementById('conn-quick-bar');
   if (!bar) return;
   const connected = Object.entries(S.connectedApps).slice(0, 5);
   bar.innerHTML = connected.map(([ctype, row]) => {
     const def = CONNECTOR_CATALOG.find(c => c.id === ctype) || {};
-    return `<button class="voice-btn" title="${def.name||ctype}: ${row.status}" onclick="insertSlash('/${ctype}')" style="font-size:12px;${row.status==='active'?'border-color:#064e3b':''}">${def.icon||'🔌'}</button>`;
+    const slashCmd = _connSlashCmd(ctype);
+    return `<button class="voice-btn" title="${def.name||ctype}: /${slashCmd}" onclick="insertSlash('/${slashCmd}')" style="font-size:12px;${row.status==='active'?'border-color:#064e3b':''}">${def.icon||'🔌'}</button>`;
   }).join('');
 }
 function insertSlash(cmd) {
@@ -1943,7 +1956,7 @@ async function _sendChatInternal(msg, imgData) {
   async function _tryPostStream() {
     try {
       const body = { message: msg, model_id: S.modelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, tools: selectedToolOptions(), skill_ids: S.selectedSkillIds||[], session_id: S.activeSession||undefined, image_url: imgData||undefined };
-      const resp = await fetch(`${API}/chat/stream`, { method:'POST', headers:{ 'Authorization':'Bearer '+S.token, 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+      const resp = await apiFetch(`${API}/chat/stream`, { method:'POST', headers:{ 'Authorization':'Bearer '+S.token, 'Content-Type':'application/json' }, body: JSON.stringify(body) });
       if (!resp.ok) { const e = await resp.json().catch(() => ({ detail: resp.statusText })); _onError(errText(e.detail || e.message || e || 'POST failed')); return; }
       const reader = resp.body.getReader(), dec = new TextDecoder();
       let buf = '';
@@ -2012,7 +2025,7 @@ function copyMsg(btn) { navigator.clipboard.writeText(btn.dataset.text); btn.tex
 async function ttsMsg(text) {
   if (!text) return;
   try {
-    const r = await fetch(API + '/voice/tts?text=' + encodeURIComponent(text), { headers:{ Authorization:'Bearer '+S.token } });
+    const r = await apiFetch(API + '/voice/tts?text=' + encodeURIComponent(text), { headers:{ Authorization:'Bearer '+S.token } });
     if (!r.ok) throw new Error('TTS failed');
     const blob = await r.blob(), url = URL.createObjectURL(blob);
     const a = new Audio(url); a.play(); a.onended = () => URL.revokeObjectURL(url);
@@ -2110,7 +2123,7 @@ function renderConnectorGrid(cat = 'All', search = '') {
   if (search) items = items.filter(c => c.name.toLowerCase().includes(search) || c.desc.toLowerCase().includes(search) || c.id.includes(search));
   el.innerHTML = items.map(c => {
     const conn = S.connectedApps[c.id];
-    const isConn = !!conn && conn.status === 'active';
+    const isConn = !!conn && (conn.status === 'active' || conn.status === 'connected' || conn.source === 'legacy_oauth');
     return `<div class="conn-card${isConn?' connected':''}">
       <div style="display:flex;align-items:flex-start;gap:10px">
         ${renderConnectorIcon(c, 28, 'conn-icon')}
@@ -2210,7 +2223,7 @@ async function connectApp(connId) {
       <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:700;margin-bottom:4px">${renderConnectorIcon(def, 18, 'modal-title-icon')} Connect ${def.name}</div>
       <div style="font-size:12px;color:#4a4a6a;margin-bottom:16px">${def.desc}</div>
       <div style="margin-bottom:14px">
-        <div class="oauth-step"><div class="oauth-step-num">1</div><div><div style="font-size:13px;font-weight:600">Authorize ${def.name}</div><div style="font-size:12px;color:#4a4a6a;margin-top:2px">Click <b>Connect via OAuth</b> — you'll be redirected to ${def.name} to sign in.</div></div></div>
+        <div class="oauth-step"><div class="oauth-step-num">1</div><div><div style="font-size:13px;font-weight:600">Authorize ${def.name}</div><div style="font-size:12px;color:#4a4a6a;margin-top:2px">Click <b>Connect via OAuth</b> — you'll be redirected to ${def.name} to sign in.${['google_calendar','google_drive','google_sheets','bigquery','google_meet'].includes(connId)?'<br><span style="color:#fbbf24">⚠️ Uses your Gmail OAuth credentials.</span>':''}</div></div></div>
         <div class="oauth-step"><div class="oauth-step-num">2</div><div><div style="font-size:13px;font-weight:600">Grant Permissions</div><div style="font-size:12px;color:#4a4a6a;margin-top:2px">Scopes: <code style="color:#7c6ff7;font-size:11px">${def.scopes||'read + write'}</code></div></div></div>
         <div class="oauth-step"><div class="oauth-step-num">3</div><div><div style="font-size:13px;font-weight:600">Done — use ${def.name} in chat</div><div style="font-size:12px;color:#4a4a6a;margin-top:2px">Type <code style="color:#7c6ff7">/${connId}</code> or use the toolbar button.</div></div></div>
       </div>
@@ -2573,7 +2586,7 @@ async function runPlayground() {
   out.innerHTML = `<div class="card" style="font-size:13px"><div style="color:#9090b0;margin-bottom:8px;display:flex;align-items:center;gap:8px"><div style="display:flex;gap:3px"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div> Running agent…</div><div id="pg-steps"></div></div>`;
   const steps = document.getElementById('pg-steps');
   try {
-    const resp = await fetch(API+'/agent/run/stream', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.token}, body: JSON.stringify({ prompt, model_id:model, tools:[], timeout_seconds:90 }) });
+    const resp = await apiFetch(API+'/agent/run/stream', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.token}, body: JSON.stringify({ prompt, model_id:model, tools:[], timeout_seconds:90 }) });
     const reader = resp.body.getReader(), dec = new TextDecoder();
     let buf = '';
     while (true) {
