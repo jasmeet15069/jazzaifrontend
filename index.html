@@ -1766,6 +1766,19 @@ function tryParseToolPayload(text) {
   } catch(e) {}
   return null;
 }
+function renderLinkedText(value) {
+  const text = String(value ?? '');
+  const urlRe = /(https?:\/\/[^\s<>"']+)/g;
+  let out = '', last = 0, match;
+  while ((match = urlRe.exec(text)) !== null) {
+    out += escHtml(text.slice(last, match.index));
+    const url = match[0];
+    out += `<a href="${escAttr(url)}" target="_blank" rel="noopener noreferrer" style="color:#93c5fd;text-decoration:underline;text-underline-offset:2px">${escHtml(url)}</a>`;
+    last = match.index + url.length;
+  }
+  out += escHtml(text.slice(last));
+  return out;
+}
 function renderToolPayload(payload) {
   const app = payload.app || 'tool';
   const result = payload.result;
@@ -1785,7 +1798,7 @@ function renderToolPayload(payload) {
       return `<div class="msg-tool"><div class="tool-header">⚙ ${escHtml(app)} result</div>
         <div style="font-size:12px;color:#9090b0">No items found.</div></div>`;
     }
-    const kvRows = keys.map(k => `<tr><td style="padding:4px 8px;font-weight:600;color:#9090b0;font-size:11px;white-space:nowrap">${escHtml(k)}</td><td style="padding:4px 8px;font-size:12px;word-break:break-all">${escHtml(String(Array.isArray(r[k]) ? r[k].join(', ') : r[k] ?? ''))}</td></tr>`).join('');
+    const kvRows = keys.map(k => `<tr><td style="padding:4px 8px;font-weight:600;color:#9090b0;font-size:11px;white-space:nowrap">${escHtml(k)}</td><td style="padding:4px 8px;font-size:12px;word-break:break-all">${renderLinkedText(Array.isArray(r[k]) ? r[k].join(', ') : r[k] ?? '')}</td></tr>`).join('');
     return `<div class="msg-tool"><div class="tool-header">⚙ ${escHtml(app)} — done</div>
       <table style="border-collapse:collapse;width:100%;margin-top:6px">${kvRows}</table></div>`;
   }
@@ -1804,11 +1817,11 @@ function renderToolPayload(payload) {
       return `<div style="padding:6px 0;border-top:${i===0?'0':'1px solid #1a1a30'}">
         <div style="font-size:12px;font-weight:600">${escHtml(String(subject))}</div>
         ${meta ? `<div style="font-size:11px;color:#4a4a6a">${escHtml(meta)}</div>` : ''}
-        ${snippet ? `<div style="font-size:12px;color:#9090b0;margin-top:2px">${escHtml(String(snippet).slice(0,260))}</div>` : ''}
+        ${snippet ? `<div style="font-size:12px;color:#9090b0;margin-top:2px">${renderLinkedText(String(snippet).slice(0,260))}</div>` : ''}
         ${(!snippet && !meta) ? `<pre style="margin:6px 0 0;white-space:pre-wrap">${escHtml(JSON.stringify(r, null, 2))}</pre>` : ''}
       </div>`;
     }
-    return `<pre style="margin:0">${escHtml(String(r))}</pre>`;
+    return `<div style="margin:0;white-space:pre-wrap">${renderLinkedText(String(r))}</div>`;
   }).join('');
   return `<div class="msg-tool"><div class="tool-header">⚙ ${escHtml(app)} result${hasError ? ' (error)' : ''}</div>${body}</div>`;
 }
