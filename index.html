@@ -2222,12 +2222,12 @@ function _isConnectorConnected(connId) {
 
 async function _finishOAuthConnected(connId) {
   _clearOAuthPoll();
-  await loadConnectedApps();
   closeModal();
   toast(`Connected: ${CONNECTOR_BY_ID[connId]?.name || connId}`, 'ok');
-  if (typeof renderConnectorGrid === 'function') renderConnectorGrid(_activeConnCat, _connSearch);
-  if (typeof renderConnQuickBar === 'function') renderConnQuickBar();
-  updateToolsCount();
+  try { await loadConnectedApps(); } catch(e) {}
+  try { if (typeof renderConnectorGrid === 'function') renderConnectorGrid(_activeConnCat, _connSearch); } catch(e) {}
+  try { if (typeof renderConnQuickBar === 'function') renderConnQuickBar(); } catch(e) {}
+  try { updateToolsCount(); } catch(e) {}
 }
 
 async function _pollOAuthComplete(connId, stateKey) {
