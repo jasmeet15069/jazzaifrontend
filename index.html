@@ -2933,6 +2933,11 @@ async function websites() {
               <select class="input" id="ws-model">${S.models.map(m=>`<option value="${m.id}">${m.label}</option>`).join('')}</select>
             </div>
           </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+            <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Sections</label><input class="input" id="ws-pages" placeholder="Home, Pricing, Contact"></div>
+            <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Palette</label><input class="input" id="ws-palette" placeholder="charcoal, violet, mint"></div>
+          </div>
+          <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Extra Instructions</label><textarea class="input" id="ws-extra" rows="2" placeholder="Add testimonials, keep dense dashboard style, include mobile nav..."></textarea></div>
           <button class="btn btn-primary" onclick="buildSite()" id="ws-btn" style="justify-content:center;padding:12px">✦ Generate Website</button>
         </div>
       </div>
@@ -2955,6 +2960,9 @@ async function loadSites() {
         </div>
         <div style="display:flex;gap:6px">
           <a href="${API+s.preview_url}" target="_blank" class="btn btn-ghost btn-sm">Preview ↗</a>
+          <button class="btn btn-ghost btn-sm" onclick="editSite('${s.id}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" onclick="duplicateSite('${s.id}')">Duplicate</button>
+          <a href="${API}/websites/${s.id}/download?token=${encodeURIComponent(S.token||'')}" target="_blank" class="btn btn-ghost btn-sm">HTML</a>
           <button class="btn btn-ghost btn-sm" style="color:#f87171" onclick="deleteSite('${s.id}')">🗑</button>
         </div>
       </div>`).join('');
@@ -2965,12 +2973,53 @@ async function buildSite() {
   if (!title||!desc) { toast('Title and description required','err'); return; }
   const btn = document.getElementById('ws-btn'); btn.textContent = '⏳ Generating…'; btn.disabled = true;
   try {
-    const d = await post('/websites/build', { title, description:desc, style:document.getElementById('ws-style').value, model_id:document.getElementById('ws-model').value });
+    const pages = (document.getElementById('ws-pages')?.value || '').split(',').map(x => x.trim()).filter(Boolean);
+    const d = await post('/websites/build', {
+      title, description:desc, pages,
+      color_palette:document.getElementById('ws-palette')?.value || '',
+      extra_instructions:document.getElementById('ws-extra')?.value || '',
+      style:document.getElementById('ws-style').value,
+      model_id:document.getElementById('ws-model').value
+    });
     btn.textContent = '✦ Generate Website'; btn.disabled = false;
     toast('Website built! ✅', 'ok'); loadSites(); window.open(API+d.preview_url, '_blank');
   } catch(e) { btn.textContent = '✦ Generate Website'; btn.disabled = false; toast(e.message,'err'); }
 }
 async function deleteSite(id) { if (!confirm('Delete?')) return; try { await del('/websites/'+id); toast('Deleted','ok'); loadSites(); } catch(e) { toast(e.message,'err'); } }
+async function duplicateSite(id) {
+  try { const d = await post('/websites/'+id+'/duplicate', {}); toast('Duplicated','ok'); loadSites(); window.open(API+d.preview_url, '_blank'); }
+  catch(e) { toast(e.message,'err'); }
+}
+async function editSite(id) {
+  try {
+    const s = await get('/websites/'+id);
+    openModal(`<div class="modal" style="width:min(920px,100%)">
+      <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700;margin-bottom:14px">Edit Website</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <input class="input" id="edit-site-title" value="${escAttr(s.title || '')}" placeholder="Title">
+        <input class="input" id="edit-site-style" value="${escAttr(s.style || '')}" placeholder="Style">
+      </div>
+      <textarea class="input" id="edit-site-desc" rows="2" placeholder="Description">${escHtml(s.description || '')}</textarea>
+      <textarea class="input" id="edit-site-html" rows="18" style="font-family:'DM Mono',monospace;font-size:12px;margin-top:10px">${escHtml(s.html || '')}</textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <a class="btn btn-ghost" target="_blank" href="${API+s.preview_url}">Preview</a>
+        <button class="btn btn-primary" onclick="saveSiteEdit('${escAttr(id)}')">Save</button>
+      </div>
+    </div>`);
+  } catch(e) { toast(e.message,'err'); }
+}
+async function saveSiteEdit(id) {
+  try {
+    await put('/websites/'+id, {
+      title:document.getElementById('edit-site-title')?.value || '',
+      style:document.getElementById('edit-site-style')?.value || '',
+      description:document.getElementById('edit-site-desc')?.value || '',
+      html:document.getElementById('edit-site-html')?.value || ''
+    });
+    closeModal(); toast('Website saved','ok'); loadSites();
+  } catch(e) { toast(e.message,'err'); }
+}
 
 // ═══════════════════════════════════════════════
 // ── CODE RUNNER ──
@@ -2988,6 +3037,9 @@ async function code() {
           <option value="shell">Shell</option>
         </select>
         <span style="font-size:12px;color:#4a4a6a">Ctrl+Enter to run</span>
+        <button class="btn btn-ghost btn-sm" onclick="insertCodeTemplate()">Template</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadCodeHistory()">History</button>
+        <button class="btn btn-ghost btn-sm" onclick="downloadCodeFile()">Download</button>
         <button class="btn btn-primary btn-sm" onclick="runCode()" style="margin-left:auto">▶ Run</button>
       </div>
       <textarea id="code-editor" class="input" style="flex:1;font-family:'DM Mono',monospace;font-size:13px;line-height:1.6;resize:none;min-height:0" placeholder="# Write your code here&#10;print('Hello, JAZZ!')" onkeydown="codeKey(event)"></textarea>
@@ -2998,6 +3050,54 @@ async function code() {
   </div>`;
 }
 function codeKey(e) { if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); runCode(); } }
+function insertCodeTemplate() {
+  const lang = document.getElementById('code-lang')?.value || 'python';
+  const templates = {
+    python: "import json\nfrom datetime import datetime\n\nresult = {\n    'message': 'Hello from JAZZ Code Runner',\n    'time': datetime.utcnow().isoformat()\n}\nprint(json.dumps(result, indent=2))",
+    javascript: "const result = {\n  message: 'Hello from JAZZ Code Runner',\n  time: new Date().toISOString()\n};\nconsole.log(JSON.stringify(result, null, 2));",
+    bash: "set -e\necho \"Hello from JAZZ Code Runner\"\npwd\nls -la | head",
+    shell: "set -e\necho \"Hello from JAZZ Code Runner\"\npwd\nls -la | head"
+  };
+  const editor = document.getElementById('code-editor');
+  if (editor) editor.value = templates[lang] || templates.python;
+}
+function downloadCodeFile() {
+  const lang = document.getElementById('code-lang')?.value || 'python';
+  const code = document.getElementById('code-editor')?.value || '';
+  const ext = { python:'py', javascript:'js', bash:'sh', shell:'sh' }[lang] || 'txt';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([code], { type:'text/plain' }));
+  a.download = `jazz-code.${ext}`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+async function loadCodeHistory() {
+  try {
+    const d = await get('/code/history?limit=25');
+    openModal(`<div class="modal" style="width:min(820px,100%)">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+        <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700">Code Run History</div>
+        <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="clearCodeHistory()">Clear</button>
+      </div>
+      <div style="display:grid;gap:8px;max-height:65vh;overflow:auto">${(d.runs||[]).map(r => `<div style="border:1px solid #1a1a30;border-radius:8px;background:#080812;padding:10px;display:grid;gap:7px">
+        <div style="display:flex;gap:8px;align-items:center"><span class="badge ${r.exit_code===0?'badge-ok':'badge-err'}">${escHtml(r.language)} exit ${r.exit_code}</span><span style="font-size:11px;color:#4a4a6a">${fmtDate(r.created_at)} · ${r.duration_ms}ms</span><button class="btn btn-ghost btn-xs" style="margin-left:auto" onclick="loadCodeRunIntoEditor('${escAttr(r.language)}', ${escAttr(JSON.stringify(r.code || ''))})">Load</button></div>
+        <pre style="white-space:pre-wrap;margin:0;font-size:11px;color:#9090b0;max-height:110px;overflow:auto">${escHtml(r.code_preview || '')}</pre>
+      </div>`).join('') || '<div style="font-size:12px;color:#4a4a6a">No runs yet.</div>'}</div>
+    </div>`);
+  } catch(e) { toast(e.message,'err'); }
+}
+function loadCodeRunIntoEditor(language, code) {
+  closeModal();
+  const lang = document.getElementById('code-lang');
+  const editor = document.getElementById('code-editor');
+  if (lang) lang.value = language || 'python';
+  if (editor) editor.value = code || '';
+}
+async function clearCodeHistory() {
+  if (!confirm('Clear code run history?')) return;
+  try { await del('/code/history'); closeModal(); toast('History cleared','ok'); }
+  catch(e) { toast(e.message,'err'); }
+}
 async function runCode() {
   const code = document.getElementById('code-editor').value, lang = document.getElementById('code-lang').value;
   if (!code.trim()) return;
@@ -3782,6 +3882,16 @@ function renderAdminOps(d = {}) {
       <div style="font-family:'DM Mono',monospace;font-size:11px;color:#9090b0;word-break:break-all">${escHtml(db.path || '')}</div>
       <div style="display:flex;justify-content:flex-end"><button class="btn btn-success btn-sm" onclick="adminDownloadDbBackup()">Download Backup</button></div>
     </div>
+    <div class="card" style="display:grid;gap:10px">
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">CSV Exports</div>
+      <div style="font-size:12px;color:#9090b0">Download operational data for audits, reporting, or migration.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="adminDownloadExport('users')">Users CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="adminDownloadExport('websites')">Websites CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="adminDownloadExport('code-runs')">Code Runs CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="adminDownloadExport('connectors')">Connectors CSV</button>
+      </div>
+    </div>
   </div>`;
 }
 async function adminSaveMaintenance() {
@@ -3808,6 +3918,9 @@ async function adminSaveBanner() {
 }
 function adminDownloadDbBackup() {
   window.open(API + '/admin/db-backup/download?token=' + encodeURIComponent(S.token || ''), '_blank');
+}
+function adminDownloadExport(kind) {
+  window.open(API + '/admin/export/' + encodeURIComponent(kind) + '?token=' + encodeURIComponent(S.token || ''), '_blank');
 }
 function renderAdminSystemJobs(d = {}) {
   const s = d.status || {};
