@@ -937,7 +937,11 @@ async function loadModels() {
     (d.db_models || []).forEach(m => all.push({ id:m.id, label:m.name||m.id, ctx:m.context_length||m.ctx||4096, censored:inferCensored(m), tags:[m.provider, ...(m.tags||[])].filter(Boolean), cost_per_million_tokens:m.cost_per_million_tokens }));
     const seen = new Set();
     const deduped = all.filter(m => !seen.has(m.id) && seen.add(m.id));
-    if (deduped.length) { S.models = deduped; S.customModels = d.db_models || []; }
+    if (deduped.length) {
+      S.models = deduped;
+      S.customModels = d.db_models || [];
+      if (!S.models.some(m => m.id === S.modelId)) S.modelId = S.models[0].id;
+    }
   } catch(e) {}
 }
 
@@ -1062,7 +1066,7 @@ function navigate(page, params = {}) {
   S.page = page; closeSidebar();
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   document.getElementById('session-list-wrap').style.display = page === 'chat' ? 'flex' : 'none';
-  const pages = { chat, documents, memory, agents, playground, multimodel: multiModelPage, connectors, websites, code, livy, apikeys, settings, admin, adminUserFeatures: adminUserFeaturesPage, mcp: mcpPage };
+  const pages = { chat, documents, memory, agents, playground, multimodel: multiModelPage, connectors, websites, code, livy, apikeys, settings, admin, adminUserFeatures: adminUserFeaturesPage, adminUserModels: adminUserModelsPage, mcp: mcpPage };
   const fn = pages[page];
   if (fn) Promise.resolve(fn(params)).then(injectPageBackButtons).then(renderThemeToggle).catch(e => console.error(e));
 }
@@ -3405,6 +3409,7 @@ async function adminTab(tab, el) {
           <td style="padding:10px 8px;display:flex;gap:4px">
             <button class="btn btn-ghost btn-xs" onclick="adminUpgradePlan('${u.id}','${escAttr(u.email)}')">Plan</button>
             <button class="btn btn-ghost btn-xs" onclick="navigate('adminUserFeatures',{userId:'${u.id}',email:'${escAttr(u.email)}'})">✎ Features</button>
+            <button class="btn btn-ghost btn-xs" onclick="navigate('adminUserModels',{userId:'${u.id}',email:'${escAttr(u.email)}'})">Models</button>
             <button class="btn btn-ghost btn-xs" onclick="adminImpersonate('${u.id}')">👤</button>
             <button class="btn btn-ghost btn-xs" style="color:#f87171" onclick="adminDeleteUser('${u.id}','${escAttr(u.email)}')">🗑</button>
           </td>
@@ -3427,9 +3432,14 @@ async function adminTab(tab, el) {
       </div>`;
     } else if (tab === 'models') {
       const d = await get('/admin/models');
-      ab.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
-        <span style="font-size:13px;color:#9090b0">${d.total} admin models</span>
-        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="adminSeedModels()">Restore Defaults</button>
+      const models = d.models || [];
+      window._adminModelRows = models;
+      const enabledCount = models.filter(m => !!(m.access_enabled ?? m.is_active)).length;
+      ab.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:13px;color:#9090b0">${enabledCount}/${models.length} models enabled globally</span>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="adminBulkModelAccess(true)">Enable All</button>
+        <button class="btn btn-ghost btn-sm" onclick="adminBulkModelAccess(false)">Disable All</button>
+        <button class="btn btn-ghost btn-sm" onclick="adminSeedModels()">Restore Defaults</button>
         <button class="btn btn-primary btn-sm" onclick="adminAddModelModal()">+ Add Model</button>
       </div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:1180px">
@@ -3439,7 +3449,7 @@ async function adminTab(tab, el) {
           <th style="padding:8px;text-align:left;font-weight:700">Model Name</th>
           <th style="padding:8px;text-align:center;font-weight:700">Default</th>
           <th style="padding:8px;text-align:center;font-weight:700">Fast</th>
-          <th style="padding:8px;text-align:center;font-weight:700">Active</th>
+          <th style="padding:8px;text-align:center;font-weight:700">Global Access</th>
           <th></th>
         </tr></thead>
         <tbody>${(d.models||[]).map(m => `<tr style="border-bottom:1px solid #0d0d1a;font-size:13px">
@@ -3453,10 +3463,11 @@ async function adminTab(tab, el) {
           <td style="padding:10px 8px;font-family:'DM Mono',monospace;font-size:11px;color:#4a4a6a">${m.model_name||'—'}</td>
           <td style="padding:10px 8px;text-align:center">${m.is_default?'⭐':'—'}</td>
           <td style="padding:10px 8px;text-align:center">${m.is_fast?'⚡':'—'}</td>
-          <td style="padding:10px 8px;text-align:center"><span class="badge ${m.is_active?'badge-ok':'badge-free'}">${m.is_active?'yes':'no'}</span></td>
+          <td style="padding:10px 8px;text-align:center"><span class="badge ${(m.access_enabled ?? m.is_active)?'badge-ok':'badge-free'}">${(m.access_enabled ?? m.is_active)?'enabled':'disabled'}</span></td>
           <td style="padding:10px 8px;display:flex;gap:4px">
-            <button class="btn btn-ghost btn-xs" onclick="adminEditModelModal('${m.id}')">Edit</button>
-            <button class="btn btn-ghost btn-xs" style="color:#f87171" onclick="adminDeleteModel('${m.id}')">🗑</button>
+            <button class="btn ${(m.access_enabled ?? m.is_active)?'btn-danger':'btn-success'} btn-xs" onclick="adminToggleModelAccess('${escAttr(m.id)}', ${!(m.access_enabled ?? m.is_active)})">${(m.access_enabled ?? m.is_active)?'Disable':'Enable'}</button>
+            ${m.is_builtin ? '' : `<button class="btn btn-ghost btn-xs" onclick="adminEditModelModal('${m.id}')">Edit</button>
+            <button class="btn btn-ghost btn-xs" style="color:#f87171" onclick="adminDeleteModel('${m.id}')">🗑</button>`}
           </td>
         </tr>`).join('')}</tbody></table></div>`;
     } else if (tab === 'connectors-admin') {
@@ -3767,6 +3778,93 @@ async function adminResetUserFeatures(uid) {
     adminLoadUserFeatures(uid);
   } catch(e) { toast(e.message, 'err'); }
 }
+function renderUserModelAccessRow(uid, m) {
+  const key = m.id;
+  const override = m.user_override;
+  const globalOn = !!m.global_enabled;
+  const effective = !!m.is_enabled;
+  const tags = (m.tags || []).slice(0, 4).map(t => `<span class="badge badge-free" style="font-size:9px">${escHtml(t)}</span>`).join('');
+  return `<div style="display:grid;grid-template-columns:minmax(260px,1fr) auto auto auto;gap:10px;align-items:center;border:1px solid #1a1a30;border-radius:10px;padding:10px;background:#080812">
+    <div style="min-width:0">
+      <div style="font-weight:700;font-size:14px">${escHtml(m.name || key)}</div>
+      <div style="font-size:11px;color:#4a4a6a;font-family:'DM Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m.model_name || key)}</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${tags}<span class="badge ${m.is_builtin?'badge-info':'badge-free'}" style="font-size:9px">${m.is_builtin?'builtin':'custom'}</span></div>
+    </div>
+    <span class="badge ${globalOn?'badge-ok':'badge-free'}">${globalOn?'global on':'global off'}</span>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn ${userFeatureModeClass(override === null || override === undefined)} btn-xs" onclick="adminSetUserModel('${escAttr(uid)}','${escAttr(key)}','default')">Default</button>
+      <button class="btn ${userFeatureModeClass(override === true)} btn-xs" onclick="adminSetUserModel('${escAttr(uid)}','${escAttr(key)}','on')">On</button>
+      <button class="btn ${userFeatureModeClass(override === false)} btn-xs" onclick="adminSetUserModel('${escAttr(uid)}','${escAttr(key)}','off')">Off</button>
+    </div>
+    <span class="badge ${effective?'badge-ok':'badge-free'}">${effective?'available':'hidden'}</span>
+  </div>`;
+}
+async function adminUserModelsPage({ userId, email } = {}) {
+  const id = userId || '';
+  if (!id) { navigate('admin'); return; }
+  document.getElementById('main-content').innerHTML = `
+  <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
+    <div class="workspace-header">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">
+        <button class="page-back-btn" onclick="goBackPage()" title="Back">‹</button>
+        <span class="page-icon">MM</span>
+        <div style="min-width:0">
+          <div class="page-title">User Model Access</div>
+          <div id="user-model-subtitle" style="font-size:12px;color:#4a4a6a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(email || id)}</div>
+        </div>
+      </div>
+    </div>
+    <div id="user-model-body" style="flex:1;overflow:auto;padding:20px"></div>
+  </div>`;
+  await adminLoadUserModels(id);
+}
+async function adminLoadUserModels(uid) {
+  const body = document.getElementById('user-model-body');
+  if (!body) return;
+  body.innerHTML = '<div style="color:#4a4a6a">Loading...</div>';
+  try {
+    const d = await get('/admin/users/'+encodeURIComponent(uid)+'/models');
+    const u = d.user || {};
+    const subtitle = document.getElementById('user-model-subtitle');
+    if (subtitle) subtitle.textContent = `${u.email || uid} · ${u.subscription || 'free'}`;
+    const enabled = (d.models || []).filter(m => m.is_enabled).length;
+    body.innerHTML = `<div style="display:grid;gap:14px">
+      <div class="card" style="display:grid;gap:8px">
+        <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">${escHtml(u.email || uid)}</div>
+        <div style="font-size:12px;color:#9090b0">Set this user's model picker access. Default follows global Models access. Global off always hides the model.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="badge ${u.role==='admin'?'badge-warn':'badge-free'}">${escHtml(u.role || 'client')}</span>
+          <span class="badge badge-${escAttr(u.subscription || 'free')}">${escHtml(u.subscription || 'free')}</span>
+          <span class="badge badge-info">${enabled}/${(d.models||[]).length} available</span>
+        </div>
+      </div>
+      <div style="display:grid;gap:8px">${(d.models||[]).map(m => renderUserModelAccessRow(uid, m)).join('')}</div>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="adminResetUserModels('${escAttr(uid)}')">Reset To Global Defaults</button>
+      </div>
+    </div>`;
+  } catch(e) {
+    body.innerHTML = `<div class="badge badge-err">${escHtml(e.message)}</div>`;
+  }
+}
+async function adminSetUserModel(uid, key, mode) {
+  const value = mode === 'default' ? null : mode === 'on';
+  try {
+    await patch('/admin/users/'+encodeURIComponent(uid)+'/models', { overrides: { [key]: value } });
+    toast('User model access updated', 'ok');
+    adminLoadUserModels(uid);
+  } catch(e) { toast(e.message, 'err'); }
+}
+async function adminResetUserModels(uid) {
+  try {
+    const d = await get('/admin/users/'+encodeURIComponent(uid)+'/models');
+    const overrides = {};
+    (d.models || []).forEach(m => { overrides[m.id] = null; });
+    await patch('/admin/users/'+encodeURIComponent(uid)+'/models', { overrides });
+    toast('User model overrides cleared', 'ok');
+    adminLoadUserModels(uid);
+  } catch(e) { toast(e.message, 'err'); }
+}
 let _adminConnectorSort = { key:'display_name', dir:'asc' };
 function adminConnectorRequirementText(r) {
   const envDetail = r?.env_detail || {};
@@ -4027,6 +4125,7 @@ function adminAddModelModal() {
       </div>
       <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Description</label><textarea class="input" id="am-desc" rows="2" placeholder="What this model is for"></textarea></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="am-active" checked style="accent-color:#7c6ff7"> Enabled</label>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="am-default" style="accent-color:#7c6ff7"> Default</label>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="am-fast" style="accent-color:#7c6ff7"> Fast</label>
       </div>
@@ -4047,11 +4146,12 @@ async function adminSaveModel() {
     max_output_tokens:parseInt(document.getElementById('am-output').value)||4096,
     temperature_default:parseFloat(document.getElementById('am-temp').value)||0.7,
     description:document.getElementById('am-desc').value.trim(),
+    is_active:document.getElementById('am-active').checked,
     is_default:document.getElementById('am-default').checked,
     is_fast:document.getElementById('am-fast').checked
   };
   if (!body.name||!body.model_name) { toast('Name and model name required','err'); return; }
-  try { await post('/admin/models', body); closeModal(); toast('Model created','ok'); adminTab('models',null); } catch(e) { toast(e.message,'err'); }
+  try { await post('/admin/models', body); closeModal(); toast('Model created','ok'); await loadModels(); adminTab('models',null); } catch(e) { toast(e.message,'err'); }
 }
 async function adminSeedModels() {
   try {
@@ -4059,6 +4159,22 @@ async function adminSeedModels() {
     toast(`Default models ready (${d.total || 0})`, 'ok');
     adminTab('models', null);
     loadModels();
+  } catch(e) { toast(e.message, 'err'); }
+}
+async function adminToggleModelAccess(id, isEnabled) {
+  try {
+    await patch('/admin/models/'+encodeURIComponent(id)+'/access', { is_enabled: !!isEnabled });
+    toast(`Model ${isEnabled ? 'enabled' : 'disabled'}`, 'ok');
+    await loadModels();
+    adminTab('models', null);
+  } catch(e) { toast(e.message, 'err'); }
+}
+async function adminBulkModelAccess(isEnabled) {
+  try {
+    await post('/admin/models/access/bulk', { is_enabled: !!isEnabled });
+    toast(isEnabled ? 'Models enabled' : 'Models disabled', 'ok');
+    await loadModels();
+    adminTab('models', null);
   } catch(e) { toast(e.message, 'err'); }
 }
 async function adminEditModelModal(id) {
@@ -4083,7 +4199,7 @@ async function adminEditModelModal(id) {
         </div>
         <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Description</label><textarea class="input" id="em-desc" rows="2">${escHtml(m.description || '')}</textarea></div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="em-active" ${m.is_active?'checked':''} style="accent-color:#7c6ff7"> Active</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="em-active" ${(m.access_enabled ?? m.is_active)?'checked':''} style="accent-color:#7c6ff7"> Enabled</label>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="em-default" ${m.is_default?'checked':''} style="accent-color:#7c6ff7"> Default</label>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="em-fast" ${m.is_fast?'checked':''} style="accent-color:#7c6ff7"> Fast</label>
         </div>
@@ -4110,9 +4226,9 @@ async function adminSaveModelEdit(id) {
   };
   const key = document.getElementById('em-apikey').value.trim();
   if (key) body.api_key = key;
-  try { await put('/admin/models/'+id, body); closeModal(); toast('Model updated','ok'); adminTab('models',null); } catch(e) { toast(e.message,'err'); }
+  try { await put('/admin/models/'+id, body); closeModal(); toast('Model updated','ok'); await loadModels(); adminTab('models',null); } catch(e) { toast(e.message,'err'); }
 }
-async function adminDeleteModel(id) { if (!confirm('Delete model?')) return; try { await del('/admin/models/'+id); toast('Deleted','ok'); adminTab('models',null); } catch(e) { toast(e.message,'err'); } }
+async function adminDeleteModel(id) { if (!confirm('Delete model?')) return; try { await del('/admin/models/'+id); toast('Deleted','ok'); await loadModels(); adminTab('models',null); } catch(e) { toast(e.message,'err'); } }
 function adminAddMcpModal() {
   openModal(`<div class="modal" style="width:520px">
     <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:700;margin-bottom:16px">Add MCP Server</div>
