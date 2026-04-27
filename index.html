@@ -623,7 +623,7 @@ const CONNECTOR_CATALOG = [
   { id:'zapier',         name:'Zapier',          icon:'⚡', cat:'Automation',    color:'#ff4a00', desc:'Trigger Zapier webhooks and automations to connect 5000+ apps.',            authType:'api_key',  keyLabel:'Webhook URL',                                                                                                        actions:['trigger_zap','list_zaps'] },
   { id:'make',           name:'Make (Integromat)',icon:'🔧',cat:'Automation',    color:'#6d00cc', desc:'Trigger Make scenarios via webhooks.',                                       authType:'api_key',  keyLabel:'Webhook URL',                                                                                                        actions:['trigger_scenario'] },
   { id:'n8n',            name:'n8n Cloud',       icon:'https://i.ibb.co/jPBvQxWj/download-8.png', cat:'Automation', color:'#ea4b71', desc:'Trigger n8n Cloud workflows via webhook.',                                  authType:'api_key',  keyLabel:'Webhook URL',                                                                                                        actions:['trigger_workflow'] },
-  { id:'n8n_local',      name:'n8n Local',       icon:'https://i.ibb.co/jPBvQxWj/download-8.png', cat:'Automation', color:'#ea4b71', desc:'Self-hosted n8n running on this server with Docker.',                         authType:'config',   configFields:[{id:'base_url',label:'Portal URL',ph:'http://45.79.124.28:5678'},{id:'webhook_url',label:'Webhook URL',ph:'http://45.79.124.28:5678/webhook/...'}], actions:['open_portal','trigger_workflow'] },
+  { id:'n8n_local',      name:'n8n Local',       icon:'https://i.ibb.co/jPBvQxWj/download-8.png', cat:'Automation', color:'#ea4b71', desc:'Self-hosted n8n running on this server with Docker.',                         authType:'local_service', localUrl:'http://45.79.124.28:5678/', actions:['open'] },
   // ── Recruiting ──
   { id:'indeed',         name:'Indeed',          icon:'💼', cat:'Recruiting',    color:'#003A9B', desc:'Search jobs, get job details, browse listings.',                            authType:'api_key',  keyLabel:'Publisher ID',          mcp:'https://mcp.indeed.com/claude/mcp',                         actions:['search_jobs','get_job_details'] },
   { id:'linkedin',       name:'LinkedIn',        icon:'🔗', cat:'Recruiting',    color:'#0a66c2', desc:'Search jobs, view profiles and company pages.',                             authType:'oauth2',   oauthUrl:'https://www.linkedin.com/oauth/v2/authorization',scopes:'r_liteprofile r_emailaddress',                           actions:['search_jobs','get_profile','list_jobs'] },
@@ -2124,7 +2124,14 @@ function renderConnectorGrid(cat = 'All', search = '') {
   if (search) items = items.filter(c => c.name.toLowerCase().includes(search) || c.desc.toLowerCase().includes(search) || c.id.includes(search));
   el.innerHTML = items.map(c => {
     const conn = S.connectedApps[c.id];
-    const isConn = !!conn && (conn.status === 'active' || conn.status === 'connected' || conn.source === 'legacy_oauth');
+    const isLocalService = c.authType === 'local_service';
+    const isConn = isLocalService || (!!conn && (conn.status === 'active' || conn.status === 'connected' || conn.source === 'legacy_oauth'));
+    const actionHtml = isLocalService
+      ? `<button class="btn btn-primary btn-sm" onclick="openLocalService('${c.id}')">Open</button>`
+      : isConn
+        ? `<button class="btn btn-success btn-sm" onclick="testConnector('${c.id}')">✓ Connected</button>
+           <button class="btn btn-ghost btn-sm" onclick="disconnectApp('${c.id}')">Disconnect</button>`
+        : `<button class="btn btn-primary btn-sm" onclick="connectApp('${c.id}')">Connect</button>`;
     return `<div class="conn-card${isConn?' connected':''}">
       <div style="display:flex;align-items:flex-start;gap:10px">
         ${renderConnectorIcon(c, 28, 'conn-icon')}
@@ -2140,14 +2147,17 @@ function renderConnectorGrid(cat = 'All', search = '') {
         ${c.actions.slice(0,3).map(a => `<span style="display:inline-block;padding:1px 6px;background:#0a0a16;border-radius:4px;margin:1px;font-family:'DM Mono',monospace">${a}</span>`).join('')}${c.actions.length>3?`<span style="color:#4a4a6a">+${c.actions.length-3}</span>`:''}
       </div>
       <div class="conn-actions">
-        ${isConn
-          ? `<button class="btn btn-success btn-sm" onclick="testConnector('${c.id}')">✓ Connected</button>
-             <button class="btn btn-ghost btn-sm" onclick="disconnectApp('${c.id}')">Disconnect</button>`
-          : `<button class="btn btn-primary btn-sm" onclick="connectApp('${c.id}')">Connect</button>`}
+        ${actionHtml}
         ${isConn && c.mcp ? `<button class="btn btn-ghost btn-sm" onclick="useMcpApp('${c.id}')">MCP</button>` : ''}
       </div>
     </div>`;
   }).join('') || '<div style="color:#4a4a6a;padding:32px;text-align:center;grid-column:1/-1">No apps match your search.</div>';
+}
+
+function openLocalService(connId) {
+  const def = CONNECTOR_BY_ID[connId];
+  if (!def?.localUrl) return;
+  window.open(def.localUrl, '_blank', 'noopener');
 }
 
 // ── OAuth state polling ──────────────────────────────────────────────────────
@@ -2218,6 +2228,10 @@ async function startOAuthFlow(connId) {
 
 async function connectApp(connId) {
   const def = CONNECTOR_BY_ID[connId]; if (!def) return;
+  if (def.authType === 'local_service') {
+    openLocalService(connId);
+    return;
+  }
   if (def.authType === 'oauth2') {
     // Show OAuth setup modal with "Connect via OAuth" button (goes through backend)
     openModal(`<div class="modal">
