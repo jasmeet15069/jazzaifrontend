@@ -689,6 +689,7 @@ const S = {
   navStack: [],
   connectedApps: {}, // connector_id -> row from smart_connectors
   platformEnabled: null, // null means "unknown/unrestricted", Set<string> when loaded
+  platformStatus: null,
   sidebarFeatures: null,
   enabledSidebarFeatures: null,
   skills: [], selectedSkillIds: [], mcpServers: [], selectedMcpTools: [], selectedConnectorIds: [],
@@ -824,6 +825,39 @@ function renderNotifPanel() {
     </div></div>`).join('');
 }
 function clearNotifs() { S.notifications = []; renderNotifPanel(); document.getElementById('notif-dot').style.display = 'none'; }
+async function loadPlatformStatus() {
+  try {
+    await resolveApiBase();
+    const r = await fetch(API + '/platform/status', { cache:'no-store' });
+    if (!r.ok) return;
+    S.platformStatus = await r.json();
+    renderGlobalBanner();
+  } catch(e) {}
+}
+function renderGlobalBanner() {
+  const old = document.getElementById('global-banner');
+  if (old) old.remove();
+  if (!document.getElementById('imp-banner')) document.body.style.paddingTop = '';
+  const status = S.platformStatus || {};
+  const maint = status.maintenance || {};
+  const banner = status.banner || {};
+  let data = null;
+  if (maint.enabled) data = { title:'Maintenance Mode', message:maint.message || 'JAZZ AI is temporarily unavailable.', type:'warn' };
+  else if (banner.enabled && (banner.title || banner.message)) data = { title:banner.title || 'Announcement', message:banner.message || '', type:banner.type || 'info' };
+  if (!data) return;
+  const colors = {
+    info:['#0a0f1a','#1e3a5f','#9cc8ff'],
+    warn:['#1c1407','#fbbf24','#fbbf24'],
+    err:['#1f0a0a','#7f1d1d','#fca5a5'],
+    ok:['#031510','#064e3b','#7ee7b2'],
+  }[data.type] || ['#0a0f1a','#1e3a5f','#9cc8ff'];
+  const el = document.createElement('div');
+  el.id = 'global-banner';
+  el.style.cssText = `position:fixed;top:0;left:0;right:0;z-index:900;background:${colors[0]};border-bottom:1px solid ${colors[1]};color:${colors[2]};padding:9px 16px;font-size:13px;display:flex;gap:10px;align-items:center;justify-content:center;text-align:center`;
+  el.innerHTML = `<b>${escHtml(data.title)}</b><span>${escHtml(data.message)}</span>`;
+  document.body.prepend(el);
+  if (!document.getElementById('imp-banner')) document.body.style.paddingTop = '38px';
+}
 
 // ═══════════════════════════════════════════════
 // AUTH
@@ -917,6 +951,7 @@ function showApp() {
     pl.className = 'badge badge-' + (S.user.subscription || 'free');
     if (S.user.role === 'admin') document.getElementById('admin-link').style.display = 'flex';
   }
+  loadPlatformStatus();
   loadUsage();
   connectWS();
   loadSidebarFeatureAccess();
@@ -3349,10 +3384,14 @@ async function admin() {
     <div style="padding:12px 20px;border-bottom:1px solid #1a1a30;display:flex;gap:6px;overflow-x:auto;flex-shrink:0">
       <div class="tab active" onclick="adminTab('stats',this)">Stats</div>
       <div class="tab" onclick="adminTab('users',this)">Users</div>
+      <div class="tab" onclick="adminTab('activity',this)">Activity</div>
+      <div class="tab" onclick="adminTab('ops',this)">Ops</div>
+      <div class="tab" onclick="adminTab('roles',this)">Roles</div>
       <div class="tab" onclick="adminTab('sidebar-features',this)">Sidebar</div>
       <div class="tab" onclick="adminTab('models',this)">Models</div>
       <div class="tab" onclick="adminTab('model-usage',this)">Model Usage</div>
       <div class="tab" onclick="adminTab('connectors-admin',this)">🔌 Connectors</div>
+      <div class="tab" onclick="adminTab('connector-health',this)">Health</div>
       <div class="tab" onclick="adminTab('connector-logs',this)">Connector Logs</div>
       <div class="tab" onclick="adminTab('mcp-admin',this)">MCP</div>
       <div class="tab" onclick="adminTab('skills-admin',this)">Skills</div>
@@ -3416,6 +3455,15 @@ async function adminTab(tab, el) {
             <button class="btn btn-ghost btn-xs" style="color:#f87171" onclick="adminDeleteUser('${u.id}','${escAttr(u.email)}')">🗑</button>
           </td>
         </tr>`).join('')}</tbody></table></div>`;
+    } else if (tab === 'activity') {
+      const d = await get('/admin/user-activity?limit=150');
+      ab.innerHTML = renderAdminUserActivity(d);
+    } else if (tab === 'ops') {
+      const d = await get('/admin/platform-controls');
+      ab.innerHTML = renderAdminOps(d);
+    } else if (tab === 'roles') {
+      const d = await get('/admin/role-permissions');
+      ab.innerHTML = renderAdminRolePermissions(d);
     } else if (tab === 'sidebar-features') {
       const d = await get('/admin/sidebar-features');
       const rows = d.features || [];
@@ -3487,6 +3535,9 @@ async function adminTab(tab, el) {
         <button class="btn btn-ghost btn-sm" onclick="adminBulkToggleConnectors(false)">Disable All</button>
       </div>
       <div id="admin-connector-table">${renderAdminConnectorTable(rows)}</div>`;
+    } else if (tab === 'connector-health') {
+      const d = await get('/admin/connector-health');
+      ab.innerHTML = renderAdminConnectorHealth(d);
     } else if (tab === 'connector-logs') {
       const d = await get('/admin/connector-logs?limit=150');
       ab.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
@@ -3680,6 +3731,151 @@ function adminMetricTile(label, value, hint = '') {
     ${hint ? `<div style="font-size:11px;color:#9090b0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(hint)}</div>` : ''}
   </div>`;
 }
+function adminMoney(n) {
+  n = Number(n || 0);
+  if (!n) return '$0';
+  return n < 0.01 ? '$' + n.toFixed(5) : '$' + n.toFixed(2);
+}
+function renderAdminOps(d = {}) {
+  const m = d.maintenance || {};
+  const b = d.banner || {};
+  const db = d.database || {};
+  return `<div style="display:grid;gap:14px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+      ${adminMetricTile('Maintenance', m.enabled ? 'On' : 'Off', m.enabled ? 'users blocked' : 'users active')}
+      ${adminMetricTile('Banner', b.enabled ? 'On' : 'Off', b.type || 'info')}
+      ${adminMetricTile('Database', fmtSize(db.size_bytes || 0), 'jazz_v14.db')}
+      ${adminMetricTile('Latest Backup', db.latest_backup_at ? fmtDate(db.latest_backup_at) : '-', db.latest_backup ? db.latest_backup.split(/[\\/]/).pop() : '')}
+    </div>
+    <div class="card" style="display:grid;gap:12px">
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">Maintenance Mode</div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#9090b0"><input type="checkbox" id="ops-maint-enabled" ${m.enabled?'checked':''} style="accent-color:#7c6ff7"> Block non-admin users</label>
+      <textarea class="input" id="ops-maint-message" rows="3" placeholder="Maintenance message">${escHtml(m.message || '')}</textarea>
+      <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="adminSaveMaintenance()">Save Maintenance</button></div>
+    </div>
+    <div class="card" style="display:grid;gap:12px">
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">Broadcast Banner</div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#9090b0"><input type="checkbox" id="ops-banner-enabled" ${b.enabled?'checked':''} style="accent-color:#7c6ff7"> Show banner to all users</label>
+      <input class="input" id="ops-banner-title" value="${escAttr(b.title || '')}" placeholder="Announcement title">
+      <textarea class="input" id="ops-banner-message" rows="3" placeholder="Announcement message">${escHtml(b.message || '')}</textarea>
+      <select class="input" id="ops-banner-type" style="max-width:180px">${['info','ok','warn','err'].map(t=>`<option value="${t}" ${b.type===t?'selected':''}>${t}</option>`).join('')}</select>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="adminSaveBanner()">Save Banner</button></div>
+    </div>
+    <div class="card" style="display:grid;gap:10px">
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">Database Backup</div>
+      <div style="font-family:'DM Mono',monospace;font-size:11px;color:#9090b0;word-break:break-all">${escHtml(db.path || '')}</div>
+      <div style="display:flex;justify-content:flex-end"><button class="btn btn-success btn-sm" onclick="adminDownloadDbBackup()">Download Backup</button></div>
+    </div>
+  </div>`;
+}
+async function adminSaveMaintenance() {
+  const enabled = !!document.getElementById('ops-maint-enabled')?.checked;
+  const message = document.getElementById('ops-maint-message')?.value || '';
+  try {
+    await patch('/admin/platform-controls', { maintenance:{ enabled, message } });
+    toast('Maintenance settings saved','ok');
+    await loadPlatformStatus();
+    adminTab('ops', null);
+  } catch(e) { toast(e.message,'err'); }
+}
+async function adminSaveBanner() {
+  const enabled = !!document.getElementById('ops-banner-enabled')?.checked;
+  const title = document.getElementById('ops-banner-title')?.value || '';
+  const message = document.getElementById('ops-banner-message')?.value || '';
+  const type = document.getElementById('ops-banner-type')?.value || 'info';
+  try {
+    await patch('/admin/platform-controls', { banner:{ enabled, title, message, type } });
+    toast('Banner saved','ok');
+    await loadPlatformStatus();
+    adminTab('ops', null);
+  } catch(e) { toast(e.message,'err'); }
+}
+function adminDownloadDbBackup() {
+  window.open(API + '/admin/db-backup/download?token=' + encodeURIComponent(S.token || ''), '_blank');
+}
+function renderAdminUserActivity(d = {}) {
+  const users = d.users || [];
+  return `<div style="display:grid;gap:12px">
+    <div style="display:flex;gap:8px;align-items:center"><span style="font-size:13px;color:#9090b0">${users.length} active user rows</span><button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="adminTab('activity',null)">Refresh</button></div>
+    <div style="display:grid;gap:8px">${users.map(u => `<div style="border:1px solid #1a1a30;border-radius:10px;background:#080812;padding:10px;display:grid;grid-template-columns:minmax(180px,1fr) repeat(4,minmax(70px,auto));gap:10px;align-items:center">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(u.email || '')}</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px"><span class="badge ${u.role==='admin'?'badge-warn':'badge-free'}" style="font-size:9px">${escHtml(u.role || '')}</span><span class="badge badge-${escAttr(u.subscription || 'free')}" style="font-size:9px">${escHtml(u.subscription || 'free')}</span><span class="badge ${u.is_active?'badge-ok':'badge-free'}" style="font-size:9px">${u.is_active?'active':'off'}</span></div>
+      </div>
+      <div style="text-align:right"><b>${adminNum(u.chats || 0)}</b><div style="font-size:10px;color:#4a4a6a">chats</div></div>
+      <div style="text-align:right"><b>${adminNum(u.messages || 0)}</b><div style="font-size:10px;color:#4a4a6a">messages</div></div>
+      <div style="min-width:110px"><div style="font-size:11px;color:#9090b0">${fmtDate(u.last_active_at)}</div><div style="font-size:10px;color:#4a4a6a">last active</div></div>
+      <div style="display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap"><button class="btn btn-ghost btn-xs" onclick="navigate('adminUserFeatures',{userId:'${escAttr(u.id)}',email:'${escAttr(u.email)}'})">Features</button><button class="btn btn-ghost btn-xs" onclick="navigate('adminUserModels',{userId:'${escAttr(u.id)}',email:'${escAttr(u.email)}'})">Models</button></div>
+      <div style="grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap">${(u.models_used||[]).slice(0,5).map(x=>`<span class="badge badge-info" style="font-size:9px">${escHtml(x)}</span>`).join('')}${(u.connectors_used||[]).slice(0,8).map(x=>`<span class="badge badge-tool" style="font-size:9px">${escHtml(x)}</span>`).join('')}</div>
+    </div>`).join('') || '<div style="font-size:12px;color:#4a4a6a">No users found.</div>'}</div>
+  </div>`;
+}
+function renderAdminConnectorHealth(d = {}) {
+  const rows = d.connectors || [];
+  const c = d.counts || {};
+  return `<div style="display:grid;gap:14px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      ${adminMetricTile('Connectors', adminNum(c.connectors), `${adminNum(c.enabled)} enabled`)}
+      ${adminMetricTile('Connected Users', adminNum(c.connected_users), 'active links')}
+      ${adminMetricTile('Expired Tokens', adminNum(c.token_expired), 'possible refresh needed')}
+      ${adminMetricTile('Test Failures', adminNum(c.test_failures), 'latest connector state')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
+      ${rows.map(r => {
+        const statusClass = r.token_expired ? 'badge-warn' : r.test_failures ? 'badge-err' : r.connected_users ? 'badge-ok' : r.setup_status === 'ready' ? 'badge-info' : 'badge-free';
+        const statusText = r.token_expired ? 'token expired' : r.test_failures ? 'failing' : r.connected_users ? 'connected' : r.setup_status || 'not configured';
+        return `<div class="card" style="padding:12px;display:grid;gap:8px">
+          <div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1;min-width:0"><div style="font-weight:700">${escHtml(r.display_name || r.connector_type)}</div><div style="font-size:11px;color:#4a4a6a">${escHtml(r.category || '')}</div></div><span class="badge ${statusClass}">${escHtml(statusText)}</span></div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center">
+            <div><b>${adminNum(r.connected_users || 0)}</b><div style="font-size:10px;color:#4a4a6a">users</div></div>
+            <div><b>${adminNum(r.token_expired || 0)}</b><div style="font-size:10px;color:#4a4a6a">expired</div></div>
+            <div><b>${adminNum(r.test_failures || 0)}</b><div style="font-size:10px;color:#4a4a6a">fails</div></div>
+          </div>
+          <div style="font-size:11px;color:#9090b0">Last test: ${fmtDate(r.last_tested_at) || '-'}</div>
+          ${r.last_error ? `<div style="font-size:11px;color:#fca5a5;word-break:break-word">${escHtml(r.last_error)}</div>` : ''}
+          <button class="btn btn-ghost btn-xs" onclick="adminOpenConnectorSetup()">Fix / Setup</button>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+function adminOpenConnectorSetup() {
+  const tabs = [...document.querySelectorAll('#main-content .tab')];
+  const tab = tabs.find(t => t.textContent.includes('Connectors'));
+  adminTab('connectors-admin', tab || null);
+}
+function renderAdminRolePermissions(d = {}) {
+  return `<div style="display:grid;gap:14px">${(d.plans||[]).map(renderAdminRolePlan).join('')}</div>`;
+}
+function renderAdminRolePlan(plan) {
+  const features = plan.features || [];
+  const models = plan.models || [];
+  return `<div class="card" style="display:grid;gap:12px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:700;text-transform:capitalize">${escHtml(plan.plan)}</div>
+      <span class="badge badge-${escAttr(plan.plan)}">${features.filter(f=>f.plan_enabled).length}/${features.length} features</span>
+      <span class="badge badge-info">${models.filter(m=>m.plan_enabled).length}/${models.length} models</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">
+      <div style="display:grid;gap:8px">
+        <div style="font-size:12px;font-weight:700;color:#9090b0">Sidebar Features</div>
+        ${features.map(f => `<label style="display:flex;align-items:center;gap:8px;border:1px solid #1a1a30;border-radius:8px;padding:8px;background:#080812;cursor:pointer"><input type="checkbox" ${f.plan_enabled?'checked':''} onchange="adminSetPlanFeature('${escAttr(plan.plan)}','${escAttr(f.feature_key)}',this.checked)" style="accent-color:#7c6ff7"><span style="flex:1">${escHtml(f.display_name || f.feature_key)}</span></label>`).join('')}
+      </div>
+      <div style="display:grid;gap:8px;max-height:360px;overflow:auto">
+        <div style="font-size:12px;font-weight:700;color:#9090b0">Models</div>
+        ${models.map(m => `<label style="display:flex;align-items:center;gap:8px;border:1px solid #1a1a30;border-radius:8px;padding:8px;background:#080812;cursor:pointer"><input type="checkbox" ${m.plan_enabled?'checked':''} onchange="adminSetPlanModel('${escAttr(plan.plan)}','${escAttr(m.id)}',this.checked)" style="accent-color:#7c6ff7"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m.name || m.id)}</span><span class="badge ${m.access_enabled?'badge-ok':'badge-free'}" style="font-size:9px">${m.access_enabled?'global on':'global off'}</span></label>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+async function adminSetPlanFeature(plan, key, enabled) {
+  try { await patch('/admin/role-permissions/'+encodeURIComponent(plan), { features:{ [key]:!!enabled } }); toast('Role feature updated','ok'); }
+  catch(e) { toast(e.message,'err'); adminTab('roles', null); }
+}
+async function adminSetPlanModel(plan, id, enabled) {
+  try { await patch('/admin/role-permissions/'+encodeURIComponent(plan), { models:{ [id]:!!enabled } }); toast('Role model updated','ok'); }
+  catch(e) { toast(e.message,'err'); adminTab('roles', null); }
+}
 function renderAdminModelUsage(d = {}) {
   const totals = d.totals || {};
   const rows = d.models || [];
@@ -3697,6 +3893,8 @@ function renderAdminModelUsage(d = {}) {
       ${adminMetricTile('Responses', adminNum(totals.responses), 'assistant messages')}
       ${adminMetricTile('Total Tokens', fmtTokens(totals.total_tokens || 0), `${fmtTokens(totals.output_tokens || 0)} output`)}
       ${adminMetricTile('Avg Latency', adminMs(totals.avg_latency_ms), 'per active model')}
+      ${adminMetricTile('Errors', adminNum(totals.error_count || 0), 'model fallback signals')}
+      ${adminMetricTile('Cost Estimate', adminMoney(totals.cost_estimate_usd || 0), 'tracked model rates')}
       ${adminMetricTile('Active Models', adminNum(rows.length), 'ranked by usage')}
     </div>
     <div class="card" style="display:grid;gap:10px">
@@ -3734,7 +3932,7 @@ function renderAdminModelUsageRow(m, maxResponses) {
       <div style="text-align:right"><div style="font-weight:700">${adminMs(m.avg_latency_ms)}</div><div style="font-size:10px;color:#4a4a6a">${fmtDate(m.last_used_at)}</div></div>
     </div>
     <div style="height:5px;background:#111124;border-radius:999px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#7c6ff7;border-radius:999px"></div></div>
-    ${modes ? `<div style="display:flex;gap:5px;flex-wrap:wrap">${modes}</div>` : ''}
+    <div style="display:flex;gap:5px;flex-wrap:wrap">${modes}${Number(m.error_count||0) ? `<span class="badge badge-err" style="font-size:9px">errors ${adminNum(m.error_count)}</span>` : ''}<span class="badge badge-free" style="font-size:9px">cost ${adminMoney(m.cost_estimate_usd || 0)}</span></div>
   </div>`;
 }
 async function adminReloadModelUsage() {
@@ -3887,8 +4085,9 @@ function renderUserFeatureAccessRow(uid, f) {
   const key = f.feature_key;
   const override = f.user_override;
   const globalOn = !!f.global_enabled;
+  const planOn = f.plan_enabled !== false;
   const effective = !!f.is_enabled;
-  return `<div style="display:grid;grid-template-columns:minmax(180px,1fr) auto auto auto;gap:10px;align-items:center;border:1px solid #1a1a30;border-radius:10px;padding:10px;background:#080812">
+  return `<div style="display:grid;grid-template-columns:minmax(180px,1fr) auto auto auto auto;gap:10px;align-items:center;border:1px solid #1a1a30;border-radius:10px;padding:10px;background:#080812">
     <div style="display:flex;gap:10px;align-items:center;min-width:0">
       <div style="width:34px;height:34px;border-radius:8px;background:#111124;display:flex;align-items:center;justify-content:center;font-weight:700;color:#7c6ff7">${escHtml(f.icon || '')}</div>
       <div style="min-width:0">
@@ -3897,6 +4096,7 @@ function renderUserFeatureAccessRow(uid, f) {
       </div>
     </div>
     <span class="badge ${globalOn?'badge-ok':'badge-free'}">${globalOn?'global on':'global off'}</span>
+    <span class="badge ${planOn?'badge-ok':'badge-free'}">${planOn?'role on':'role off'}</span>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn ${userFeatureModeClass(override === null || override === undefined)} btn-xs" onclick="adminSetUserFeature('${escAttr(uid)}','${escAttr(key)}','default')">Default</button>
       <button class="btn ${userFeatureModeClass(override === true)} btn-xs" onclick="adminSetUserFeature('${escAttr(uid)}','${escAttr(key)}','on')">On</button>
@@ -3973,15 +4173,17 @@ function renderUserModelAccessRow(uid, m) {
   const key = m.id;
   const override = m.user_override;
   const globalOn = !!m.global_enabled;
+  const planOn = m.plan_enabled !== false;
   const effective = !!m.is_enabled;
   const tags = (m.tags || []).slice(0, 4).map(t => `<span class="badge badge-free" style="font-size:9px">${escHtml(t)}</span>`).join('');
-  return `<div style="display:grid;grid-template-columns:minmax(260px,1fr) auto auto auto;gap:10px;align-items:center;border:1px solid #1a1a30;border-radius:10px;padding:10px;background:#080812">
+  return `<div style="display:grid;grid-template-columns:minmax(260px,1fr) auto auto auto auto;gap:10px;align-items:center;border:1px solid #1a1a30;border-radius:10px;padding:10px;background:#080812">
     <div style="min-width:0">
       <div style="font-weight:700;font-size:14px">${escHtml(m.name || key)}</div>
       <div style="font-size:11px;color:#4a4a6a;font-family:'DM Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m.model_name || key)}</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${tags}<span class="badge ${m.is_builtin?'badge-info':'badge-free'}" style="font-size:9px">${m.is_builtin?'builtin':'custom'}</span></div>
     </div>
     <span class="badge ${globalOn?'badge-ok':'badge-free'}">${globalOn?'global on':'global off'}</span>
+    <span class="badge ${planOn?'badge-ok':'badge-free'}">${planOn?'role on':'role off'}</span>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn ${userFeatureModeClass(override === null || override === undefined)} btn-xs" onclick="adminSetUserModel('${escAttr(uid)}','${escAttr(key)}','default')">Default</button>
       <button class="btn ${userFeatureModeClass(override === true)} btn-xs" onclick="adminSetUserModel('${escAttr(uid)}','${escAttr(key)}','on')">On</button>
@@ -4540,6 +4742,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Enter' && document.ac
 loadSaved();
 (async () => {
   await resolveApiBase();
+  await loadPlatformStatus();
   if (S.token && S.user) {
     get('/auth/me').then(u => { S.user = u; save(); showApp(); }).catch(() => doLogout());
   } else {
