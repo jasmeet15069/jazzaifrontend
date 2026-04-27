@@ -1194,7 +1194,7 @@ function renderConnQuickBar() {
   bar.innerHTML = connected.map(([ctype, row]) => {
     const def = CONNECTOR_CATALOG.find(c => c.id === ctype) || {};
     const slashCmd = _connSlashCmd(ctype);
-    return `<button class="voice-btn" title="${def.name||ctype}: /${slashCmd}" onclick="insertSlash('/${slashCmd}')" style="font-size:12px;${row.status==='active'?'border-color:#064e3b':''}">${def.icon||'🔌'}</button>`;
+    return `<button class="voice-btn" title="${def.name||ctype}: /${slashCmd}" onclick="insertSlash('/${slashCmd}')" style="font-size:12px;${row.status==='active'?'border-color:#064e3b':''}">${renderConnectorIcon(def.icon ? def : { icon:'🔌', name:ctype }, 17, 'tool-app-icon')}</button>`;
   }).join('');
 }
 function insertSlash(cmd) {
@@ -1625,7 +1625,7 @@ async function openToolsDrawer() {
     const checked = !S.selectedConnectorIds?.length || S.selectedConnectorIds.includes(id);
     return `<div style="padding:9px;border:1px solid #1a1a30;border-radius:8px;background:#080812;display:grid;gap:8px">
       <div style="display:flex;align-items:center;gap:8px">
-        <button class="voice-btn" type="button" title="Use ${escAttr(def.name || id)}" onclick="useToolApp('${escAttr(id)}')" style="font-size:15px;border-color:#064e3b">${def.icon||'🔌'}</button>
+        <button class="voice-btn" type="button" title="Use ${escAttr(def.name || id)}" onclick="useToolApp('${escAttr(id)}')" style="font-size:15px;border-color:#064e3b">${renderConnectorIcon(def.icon ? def : { icon:'🔌', name:id }, 18, 'tool-app-icon')}</button>
         <div style="min-width:0;flex:1">
           <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(def.name || a.name || id)}</div>
           <div style="font-size:11px;color:#34d399">${escHtml(a.status || 'active')}</div>
@@ -3184,8 +3184,10 @@ async function admin() {
   adminTab('stats', document.querySelector('#main-content .tab'));
 }
 async function adminTab(tab, el) {
-  document.querySelectorAll('#main-content .tab').forEach(t => t.classList.remove('active'));
-  if (el) el.classList.add('active');
+  if (el) {
+    document.querySelectorAll('#main-content .tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+  }
   const ab = document.getElementById('admin-body'); ab.innerHTML = '<div style="color:#4a4a6a">Loading…</div>';
   try {
     if (tab === 'stats') {
@@ -3265,45 +3267,14 @@ async function adminTab(tab, el) {
     } else if (tab === 'connectors-admin') {
       const d = await get('/admin/platform-connectors');
       const rows = d.connectors || [];
+      window._adminConnectorRows = rows;
       const enabledCount = rows.filter(r => !!r.is_enabled).length;
       ab.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
         <span style="font-size:13px;color:#9090b0">${enabledCount}/${rows.length} enabled for users</span>
         <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="adminBulkToggleConnectors(true)">Enable All</button>
         <button class="btn btn-ghost btn-sm" onclick="adminBulkToggleConnectors(false)">Disable All</button>
       </div>
-      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:720px">
-        <thead><tr style="font-size:10px;color:#4a4a6a;border-bottom:1px solid #1a1a30;text-transform:uppercase;letter-spacing:.08em">
-          <th style="padding:8px;text-align:left;font-weight:700">Connector</th>
-          <th style="padding:8px;text-align:left;font-weight:700">Category</th>
-          <th style="padding:8px;text-align:center;font-weight:700">Setup</th>
-          <th style="padding:8px;text-align:center;font-weight:700">Enabled</th>
-          <th style="padding:8px;text-align:left;font-weight:700">Requirements</th>
-        </tr></thead>
-        <tbody>${rows.map(r => {
-          const setup = (r.setup_status || '').toLowerCase();
-          const setupBadge = setup === 'ready'
-            ? '<span class="badge badge-ok">ready</span>'
-            : setup === 'partial'
-              ? '<span class="badge badge-warn">partial</span>'
-              : '<span class="badge badge-err">not configured</span>';
-          const envDetail = r.env_detail || {};
-          const reqKeys = Object.keys(envDetail);
-          const reqText = reqKeys.length
-            ? reqKeys.map(k => `${k}:${envDetail[k] ? 'ok' : 'missing'}`).join(' · ')
-            : 'none';
-          return `<tr style="border-bottom:1px solid #0d0d1a;font-size:13px">
-            <td style="padding:10px 8px;font-weight:500">${escHtml(r.display_name || r.connector_type)}</td>
-            <td style="padding:10px 8px;color:#9090b0">${escHtml(r.category || 'General')}</td>
-            <td style="padding:10px 8px;text-align:center">${setupBadge}</td>
-            <td style="padding:10px 8px;text-align:center">
-              <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="checkbox" ${r.is_enabled ? 'checked' : ''} onchange="adminTogglePlatformConnector('${r.connector_type}', this.checked)" style="accent-color:#7c6ff7">
-                <span style="font-size:12px;color:#9090b0">${r.is_enabled ? 'on' : 'off'}</span>
-              </label>
-            </td>
-            <td style="padding:10px 8px;font-size:11px;color:#4a4a6a;font-family:'DM Mono',monospace">${escHtml(reqText)}</td>
-          </tr>`;
-        }).join('')}</tbody></table></div>`;
+      <div id="admin-connector-table">${renderAdminConnectorTable(rows)}</div>`;
     } else if (tab === 'connector-logs') {
       const d = await get('/admin/connector-logs?limit=150');
       ab.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
@@ -3477,6 +3448,92 @@ async function adminTab(tab, el) {
 }
 
 // Admin helpers
+let _adminConnectorSort = { key:'display_name', dir:'asc' };
+function adminConnectorRequirementText(r) {
+  const envDetail = r?.env_detail || {};
+  const reqKeys = Object.keys(envDetail);
+  return reqKeys.length
+    ? reqKeys.map(k => `${k}:${envDetail[k] ? 'ok' : 'missing'}`).join(' · ')
+    : 'none';
+}
+function adminConnectorSortValue(r, key) {
+  if (key === 'display_name') return String(r.display_name || r.connector_type || '').toLowerCase();
+  if (key === 'category') return String(r.category || 'General').toLowerCase();
+  if (key === 'setup_status') {
+    const setup = String(r.setup_status || '').toLowerCase();
+    return setup === 'ready' ? 2 : setup === 'partial' ? 1 : 0;
+  }
+  if (key === 'is_enabled') return r.is_enabled ? 1 : 0;
+  if (key === 'requirements') return adminConnectorRequirementText(r).toLowerCase();
+  return '';
+}
+function adminSortedConnectorRows(rows) {
+  const key = _adminConnectorSort.key || 'display_name';
+  const dir = _adminConnectorSort.dir === 'desc' ? -1 : 1;
+  return [...(rows || [])].sort((a, b) => {
+    const av = adminConnectorSortValue(a, key);
+    const bv = adminConnectorSortValue(b, key);
+    let cmp = 0;
+    if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
+    else cmp = String(av).localeCompare(String(bv), undefined, { numeric:true, sensitivity:'base' });
+    if (!cmp && key !== 'display_name') {
+      cmp = adminConnectorSortValue(a, 'display_name').localeCompare(adminConnectorSortValue(b, 'display_name'), undefined, { numeric:true, sensitivity:'base' });
+    }
+    return cmp * dir;
+  });
+}
+function adminConnectorSortTh(label, key, align = 'left') {
+  const active = _adminConnectorSort.key === key;
+  const dir = active ? _adminConnectorSort.dir : 'asc';
+  const arrow = dir === 'asc' ? '&darr;' : '&uarr;';
+  const color = active ? '#7c6ff7' : '#4a4a6a';
+  return `<th style="padding:0;text-align:${align};font-weight:700">
+    <button type="button" onclick="adminSetConnectorSort('${key}')" title="Sort ${escAttr(label)}" style="width:100%;padding:8px;background:transparent;border:none;color:inherit;cursor:pointer;text-align:${align};font:inherit;text-transform:inherit;letter-spacing:inherit;display:inline-flex;align-items:center;gap:6px;justify-content:${align==='center'?'center':'flex-start'}">
+      <span>${escHtml(label)}</span><span style="color:${color};font-size:11px;line-height:1">${arrow}</span>
+    </button>
+  </th>`;
+}
+function adminSetConnectorSort(key) {
+  if (_adminConnectorSort.key === key) {
+    _adminConnectorSort.dir = _adminConnectorSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _adminConnectorSort = { key, dir:'asc' };
+  }
+  const target = document.getElementById('admin-connector-table');
+  if (target) target.innerHTML = renderAdminConnectorTable(window._adminConnectorRows || []);
+}
+function renderAdminConnectorTable(rows) {
+  const sortedRows = adminSortedConnectorRows(rows);
+  return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:720px">
+    <thead><tr style="font-size:10px;color:#4a4a6a;border-bottom:1px solid #1a1a30;text-transform:uppercase;letter-spacing:.08em">
+      ${adminConnectorSortTh('Connector', 'display_name')}
+      ${adminConnectorSortTh('Category', 'category')}
+      ${adminConnectorSortTh('Setup', 'setup_status', 'center')}
+      ${adminConnectorSortTh('Enabled', 'is_enabled', 'center')}
+      ${adminConnectorSortTh('Requirements', 'requirements')}
+    </tr></thead>
+    <tbody>${sortedRows.map(r => {
+      const setup = (r.setup_status || '').toLowerCase();
+      const setupBadge = setup === 'ready'
+        ? '<span class="badge badge-ok">ready</span>'
+        : setup === 'partial'
+          ? '<span class="badge badge-warn">partial</span>'
+          : '<span class="badge badge-err">not configured</span>';
+      const reqText = adminConnectorRequirementText(r);
+      return `<tr style="border-bottom:1px solid #0d0d1a;font-size:13px">
+        <td style="padding:10px 8px;font-weight:500">${escHtml(r.display_name || r.connector_type)}</td>
+        <td style="padding:10px 8px;color:#9090b0">${escHtml(r.category || 'General')}</td>
+        <td style="padding:10px 8px;text-align:center">${setupBadge}</td>
+        <td style="padding:10px 8px;text-align:center">
+          <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" ${r.is_enabled ? 'checked' : ''} onchange="adminTogglePlatformConnector('${escAttr(r.connector_type)}', this.checked)" style="accent-color:#7c6ff7">
+            <span style="font-size:12px;color:#9090b0">${r.is_enabled ? 'on' : 'off'}</span>
+          </label>
+        </td>
+        <td style="padding:10px 8px;font-size:11px;color:#4a4a6a;font-family:'DM Mono',monospace">${escHtml(reqText)}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+}
 function renderConnectorLogTable(logs) {
   return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:720px">
     <thead><tr style="font-size:10px;color:#4a4a6a;border-bottom:1px solid #1a1a30;text-transform:uppercase;letter-spacing:.08em">
