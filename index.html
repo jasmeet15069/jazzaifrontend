@@ -3351,11 +3351,13 @@ async function admin() {
       <div class="tab" onclick="adminTab('users',this)">Users</div>
       <div class="tab" onclick="adminTab('sidebar-features',this)">Sidebar</div>
       <div class="tab" onclick="adminTab('models',this)">Models</div>
+      <div class="tab" onclick="adminTab('model-usage',this)">Model Usage</div>
       <div class="tab" onclick="adminTab('connectors-admin',this)">🔌 Connectors</div>
       <div class="tab" onclick="adminTab('connector-logs',this)">Connector Logs</div>
       <div class="tab" onclick="adminTab('mcp-admin',this)">MCP</div>
       <div class="tab" onclick="adminTab('skills-admin',this)">Skills</div>
       <div class="tab" onclick="adminTab('audit',this)">Audit</div>
+      <div class="tab" onclick="adminTab('errors',this)">Errors</div>
       <div class="tab" onclick="adminTab('metrics',this)">Metrics</div>
       <div class="tab" onclick="adminTab('system',this)">System</div>
       <div class="tab" onclick="adminTab('env',this)">Env</div>
@@ -3471,6 +3473,9 @@ async function adminTab(tab, el) {
             <button class="btn btn-ghost btn-xs" style="color:#f87171" onclick="adminDeleteModel('${m.id}')">🗑</button>`}
           </td>
         </tr>`).join('')}</tbody></table></div>`;
+    } else if (tab === 'model-usage') {
+      const d = await get('/admin/model-usage?days=14&limit=40');
+      ab.innerHTML = renderAdminModelUsage(d);
     } else if (tab === 'connectors-admin') {
       const d = await get('/admin/platform-connectors');
       const rows = d.connectors || [];
@@ -3561,6 +3566,9 @@ async function adminTab(tab, el) {
           <td style="padding:8px;color:#4a4a6a;font-size:11px">${l.ip_address||'—'}</td>
           <td style="padding:8px;color:#4a4a6a;font-size:11px">${fmtDate(l.created_at)}</td>
         </tr>`).join('')}</tbody></table></div>`;
+    } else if (tab === 'errors') {
+      const d = await get('/admin/error-monitor?limit=120');
+      ab.innerHTML = renderAdminErrorMonitor(d);
     } else if (tab === 'metrics') {
       const d = await get('/admin/metrics?days=14');
       ab.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">
@@ -3657,6 +3665,150 @@ async function adminTab(tab, el) {
 }
 
 // Admin helpers
+function adminNum(n) {
+  return Number(n || 0).toLocaleString();
+}
+function adminMs(n) {
+  n = Number(n || 0);
+  if (!n) return '-';
+  return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/,'') + 's' : Math.round(n) + 'ms';
+}
+function adminMetricTile(label, value, hint = '') {
+  return `<div class="card" style="padding:12px;display:grid;gap:4px;min-width:0">
+    <div style="font-size:10px;color:#4a4a6a;text-transform:uppercase;letter-spacing:.08em;font-weight:700">${escHtml(label)}</div>
+    <div style="font-family:'Syne',sans-serif;font-size:22px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(value)}</div>
+    ${hint ? `<div style="font-size:11px;color:#9090b0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(hint)}</div>` : ''}
+  </div>`;
+}
+function renderAdminModelUsage(d = {}) {
+  const totals = d.totals || {};
+  const rows = d.models || [];
+  const daily = d.daily || [];
+  const days = Number(d.days || 14);
+  const maxResponses = Math.max(1, ...rows.map(r => Number(r.responses || 0)));
+  const dayOptions = [7,14,30,90].map(v => `<option value="${v}" ${days===v?'selected':''}>${v} days</option>`).join('');
+  return `<div style="display:grid;gap:14px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:13px;color:#9090b0">${rows.length} models used in the last ${days} days</span>
+      <select class="input" id="admin-model-usage-days" style="margin-left:auto;max-width:130px">${dayOptions}</select>
+      <button class="btn btn-primary btn-sm" onclick="adminReloadModelUsage()">Refresh</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      ${adminMetricTile('Responses', adminNum(totals.responses), 'assistant messages')}
+      ${adminMetricTile('Total Tokens', fmtTokens(totals.total_tokens || 0), `${fmtTokens(totals.output_tokens || 0)} output`)}
+      ${adminMetricTile('Avg Latency', adminMs(totals.avg_latency_ms), 'per active model')}
+      ${adminMetricTile('Active Models', adminNum(rows.length), 'ranked by usage')}
+    </div>
+    <div class="card" style="display:grid;gap:10px">
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">Top Models</div>
+      <div style="display:grid;gap:8px">${rows.map(r => renderAdminModelUsageRow(r, maxResponses)).join('') || '<div style="font-size:12px;color:#4a4a6a;padding:12px">No model usage found.</div>'}</div>
+    </div>
+    <div class="card" style="display:grid;gap:10px">
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">Daily Output</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px">
+        ${daily.slice(-18).map(day => `<div style="border:1px solid #1a1a30;border-radius:8px;padding:10px;background:#080812;min-width:0">
+          <div style="font-size:10px;color:#4a4a6a;margin-bottom:4px">${escHtml(day.date || '')}</div>
+          <div style="font-weight:700">${adminNum(day.responses || 0)}</div>
+          <div style="font-size:11px;color:#9090b0">${fmtTokens(day.output_tokens || 0)} tokens</div>
+        </div>`).join('') || '<div style="font-size:12px;color:#4a4a6a">No daily data yet.</div>'}
+      </div>
+    </div>
+  </div>`;
+}
+function renderAdminModelUsageRow(m, maxResponses) {
+  const responses = Number(m.responses || 0);
+  const pct = Math.max(4, Math.min(100, Math.round(responses / Math.max(1, maxResponses) * 100)));
+  const modes = [
+    ['tool', m.tool_responses],
+    ['agent', m.agent_responses],
+    ['thinking', m.thinking_responses],
+  ].filter(([,v]) => Number(v || 0) > 0).map(([k,v]) => `<span class="badge badge-tool" style="font-size:9px">${k} ${adminNum(v)}</span>`).join('');
+  return `<div style="border:1px solid #1a1a30;border-radius:10px;padding:10px;background:#080812;display:grid;gap:8px;min-width:0">
+    <div style="display:grid;grid-template-columns:minmax(160px,1fr) repeat(3,minmax(76px,auto));gap:10px;align-items:center">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m.model_label || m.model_id || 'unknown')}</div>
+        <div style="font-family:'DM Mono',monospace;font-size:10px;color:#4a4a6a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m.model_id || '')}</div>
+      </div>
+      <div style="text-align:right"><div style="font-weight:700">${adminNum(responses)}</div><div style="font-size:10px;color:#4a4a6a">responses</div></div>
+      <div style="text-align:right"><div style="font-weight:700">${fmtTokens(m.total_tokens || 0)}</div><div style="font-size:10px;color:#4a4a6a">tokens</div></div>
+      <div style="text-align:right"><div style="font-weight:700">${adminMs(m.avg_latency_ms)}</div><div style="font-size:10px;color:#4a4a6a">${fmtDate(m.last_used_at)}</div></div>
+    </div>
+    <div style="height:5px;background:#111124;border-radius:999px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#7c6ff7;border-radius:999px"></div></div>
+    ${modes ? `<div style="display:flex;gap:5px;flex-wrap:wrap">${modes}</div>` : ''}
+  </div>`;
+}
+async function adminReloadModelUsage() {
+  const days = document.getElementById('admin-model-usage-days')?.value || '14';
+  const ab = document.getElementById('admin-body');
+  if (ab) ab.innerHTML = '<div style="color:#4a4a6a">Loading...</div>';
+  try {
+    const d = await get(`/admin/model-usage?days=${encodeURIComponent(days)}&limit=40`);
+    if (ab) ab.innerHTML = renderAdminModelUsage(d);
+  } catch(e) {
+    if (ab) ab.innerHTML = `<div class="badge badge-err">${escHtml(e.message)}</div>`;
+  }
+}
+function renderAdminErrorMonitor(d = {}) {
+  const counts = d.counts || {};
+  const errors = d.errors || [];
+  const connectorFailures = d.connector_failures || [];
+  const failedJobs = d.failed_jobs || [];
+  return `<div style="display:grid;gap:14px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:13px;color:#9090b0">Recent server health signals</span>
+      <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="adminReloadErrorMonitor()">Refresh</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      ${adminMetricTile('Errors', adminNum(counts.errors), 'from log tail')}
+      ${adminMetricTile('Warnings', adminNum(counts.warnings), 'from log tail')}
+      ${adminMetricTile('Connector Fails', adminNum(counts.connector_failures), 'latest 20')}
+      ${adminMetricTile('Failed Jobs', adminNum(counts.failed_jobs), 'latest 20')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+      <div class="card" style="display:grid;gap:10px;align-content:start">
+        <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">Log Issues</div>
+        <div style="display:grid;gap:8px;max-height:420px;overflow:auto">${errors.map(renderAdminErrorEntry).join('') || '<div style="font-size:12px;color:#4a4a6a">No recent log errors.</div>'}</div>
+      </div>
+      <div class="card" style="display:grid;gap:10px;align-content:start">
+        <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">Connector Failures</div>
+        <div style="display:grid;gap:8px">${connectorFailures.map(f => `<div style="border:1px solid #1a1a30;border-radius:8px;padding:10px;background:#080812;display:grid;gap:4px">
+          <div style="display:flex;gap:8px;align-items:center;min-width:0"><span class="badge badge-err">failure</span><b style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(f.connector_type || '')}</b></div>
+          <div style="font-size:11px;color:#9090b0">${escHtml(f.action || '')} - ${fmtDate(f.created_at)}</div>
+          <div style="font-size:11px;color:#fca5a5;word-break:break-word">${escHtml(f.error_msg || '')}</div>
+        </div>`).join('') || '<div style="font-size:12px;color:#4a4a6a">No connector failures.</div>'}</div>
+      </div>
+      <div class="card" style="display:grid;gap:10px;align-content:start">
+        <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">Agent Job Failures</div>
+        <div style="display:grid;gap:8px">${failedJobs.map(j => `<div style="border:1px solid #1a1a30;border-radius:8px;padding:10px;background:#080812;display:grid;gap:4px">
+          <div style="display:flex;gap:8px;align-items:center;min-width:0"><span class="badge badge-err">${escHtml(j.status || 'failed')}</span><b style="font-family:'DM Mono',monospace;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.job_id || '')}</b></div>
+          <div style="font-size:11px;color:#9090b0">${fmtDate(j.started_at)} ${j.finished_at ? '- ' + fmtDate(j.finished_at) : ''}</div>
+          <div style="font-size:11px;color:#fca5a5;word-break:break-word">${escHtml(j.error_message || '')}</div>
+        </div>`).join('') || '<div style="font-size:12px;color:#4a4a6a">No failed agent jobs.</div>'}</div>
+      </div>
+    </div>
+  </div>`;
+}
+function renderAdminErrorEntry(e) {
+  const level = String(e.level || '').toLowerCase();
+  return `<div style="border:1px solid #1a1a30;border-radius:8px;padding:10px;background:#080812;display:grid;gap:5px">
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="badge ${level === 'warning' ? 'badge-warn' : 'badge-err'}">${escHtml(level || 'error')}</span>
+      <span style="font-size:11px;color:#4a4a6a;font-family:'DM Mono',monospace">line ${adminNum(e.line_no || 0)}</span>
+      <span style="margin-left:auto;font-size:11px;color:#4a4a6a">${escHtml(e.timestamp || '')}</span>
+    </div>
+    <div style="font-family:'DM Mono',monospace;font-size:11px;color:#c7c7e8;word-break:break-word;line-height:1.45">${escHtml(e.message || '')}</div>
+  </div>`;
+}
+async function adminReloadErrorMonitor() {
+  const ab = document.getElementById('admin-body');
+  if (ab) ab.innerHTML = '<div style="color:#4a4a6a">Loading...</div>';
+  try {
+    const d = await get('/admin/error-monitor?limit=120');
+    if (ab) ab.innerHTML = renderAdminErrorMonitor(d);
+  } catch(e) {
+    if (ab) ab.innerHTML = `<div class="badge badge-err">${escHtml(e.message)}</div>`;
+  }
+}
 function renderAdminModelCompactList(models = []) {
   const headerStyle = "font-size:10px;color:#4a4a6a;text-transform:uppercase;letter-spacing:.08em;font-weight:700;min-width:0";
   return `<div style="display:grid;gap:0;width:100%;overflow:hidden">
