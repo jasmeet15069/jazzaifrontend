@@ -2208,10 +2208,26 @@ function openLocalService(connId) {
 // ── OAuth state polling ──────────────────────────────────────────────────────
 let _oauthPollTimer = null;
 let _oauthPollConnId = null;
+let _oauthPollBusy = false;
 
 function _clearOAuthPoll() {
   if (_oauthPollTimer) { clearInterval(_oauthPollTimer); _oauthPollTimer = null; }
   _oauthPollConnId = null;
+  _oauthPollBusy = false;
+}
+
+function _isConnectorConnected(connId) {
+  return !!(S.connectedApps && S.connectedApps[connId]);
+}
+
+async function _finishOAuthConnected(connId) {
+  _clearOAuthPoll();
+  await loadConnectedApps();
+  closeModal();
+  toast(`Connected: ${CONNECTOR_BY_ID[connId]?.name || connId}`, 'ok');
+  if (typeof renderConnectorGrid === 'function') renderConnectorGrid(_activeConnCat, _connSearch);
+  if (typeof renderConnQuickBar === 'function') renderConnQuickBar();
+  updateToolsCount();
 }
 
 async function _pollOAuthComplete(connId, stateKey) {
@@ -2236,6 +2252,48 @@ async function _pollOAuthComplete(connId, stateKey) {
         renderConnQuickBar();
       }
     } catch(e) { /* keep polling */ }
+  }, 2000);
+}
+
+async function _pollOAuthComplete(connId, stateKey, popup = null) {
+  let attempts = 0;
+  _oauthPollConnId = connId;
+  _oauthPollTimer = setInterval(async () => {
+    if (_oauthPollBusy) return;
+    _oauthPollBusy = true;
+    attempts++;
+    try {
+      const d = await get(`/connectors/oauth/${connId}/status?state=${stateKey}`);
+      if (d?.connected) {
+        await _finishOAuthConnected(connId);
+        return;
+      }
+    } catch(e) { /* keep polling */ }
+    try {
+      await loadConnectedApps();
+      if (_isConnectorConnected(connId)) {
+        await _finishOAuthConnected(connId);
+        return;
+      }
+    } catch(e) { /* keep polling */ }
+    if (popup?.closed && attempts >= 2) {
+      try {
+        await loadConnectedApps();
+        if (_isConnectorConnected(connId)) {
+          await _finishOAuthConnected(connId);
+          return;
+        }
+      } catch(e) {}
+    }
+    if (attempts > 60) {
+      if (_isConnectorConnected(connId)) await _finishOAuthConnected(connId);
+      else {
+        _clearOAuthPoll();
+        toast('OAuth timed out. Try again.', 'err');
+      }
+      return;
+    }
+    _oauthPollBusy = false;
   }, 2000);
 }
 
@@ -2268,7 +2326,7 @@ async function startOAuthFlow(connId) {
   const popup = window.open(initUrl, '_blank', 'width=600,height=700,noopener');
   if (!popup) toast('Pop-up blocked — use the manual link below', 'warn');
   // Start polling for completion
-  _pollOAuthComplete(connId, stateKey);
+  _pollOAuthComplete(connId, stateKey, popup);
 }
 
 async function connectApp(connId) {
