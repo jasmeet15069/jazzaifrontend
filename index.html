@@ -407,11 +407,11 @@ select.input{cursor:pointer;appearance:none}
       <nav style="padding:10px 8px;flex-shrink:0">
         <button class="nav-item sidebar-new-chat" type="button" onclick="newSession()"><span class="icon">+</span>New Chat</button>
         <a class="nav-item" data-page="chat"        onclick="navigate('chat')">       <span class="icon">💬</span>Chat</a>
-        <a class="nav-item" data-page="agents"      onclick="navigate('agents')">     <span class="icon">🤖</span>Agent Jobs</a>
-        <a class="nav-item" data-page="playground"  onclick="navigate('playground')"> <span class="icon">⚡</span>Playground</a>
-        <a class="nav-item" data-page="multimodel"  onclick="navigate('multimodel')"> <span class="icon">MM</span>Multi-Model</a>
-        <a class="nav-item" data-page="websites"    onclick="navigate('websites')">   <span class="icon">🌐</span>Website Builder</a>
-        <a class="nav-item" data-page="code"        onclick="navigate('code')">       <span class="icon">💻</span>Code Runner</a>
+        <a class="nav-item" data-page="agents"      data-feature-key="agents" onclick="navigate('agents')">     <span class="icon">🤖</span>Agent Jobs</a>
+        <a class="nav-item" data-page="playground"  data-feature-key="playground" onclick="navigate('playground')"> <span class="icon">⚡</span>Playground</a>
+        <a class="nav-item" data-page="multimodel"  data-feature-key="multimodel" onclick="navigate('multimodel')"> <span class="icon">MM</span>Multi-Model</a>
+        <a class="nav-item" data-page="websites"    data-feature-key="websites" onclick="navigate('websites')">   <span class="icon">🌐</span>Website Builder</a>
+        <a class="nav-item" data-page="code"        data-feature-key="code" onclick="navigate('code')">       <span class="icon">💻</span>Code Runner</a>
         <a id="admin-link" class="nav-item" data-page="admin" onclick="navigate('admin')" style="display:none"><span class="icon">👑</span>Admin</a>
       </nav>
 
@@ -655,6 +655,15 @@ const SLASH_COMMANDS = [
   ...CONNECTOR_CATALOG.map(c => ({ cmd: c.id, name: c.name, icon: c.icon, desc: c.desc, actions: c.actions }))
 ];
 
+const SIDEBAR_FEATURES = [
+  { key:'agents',     page:'agents',     label:'Agent Jobs',      icon:'🤖' },
+  { key:'playground', page:'playground', label:'Playground',      icon:'⚡' },
+  { key:'multimodel', page:'multimodel', label:'Multi-Model',     icon:'MM' },
+  { key:'websites',   page:'websites',   label:'Website Builder', icon:'🌐' },
+  { key:'code',       page:'code',       label:'Code Runner',     icon:'💻' },
+];
+const SIDEBAR_FEATURE_BY_PAGE = Object.fromEntries(SIDEBAR_FEATURES.map(f => [f.page, f]));
+
 // ═══════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════
@@ -680,6 +689,8 @@ const S = {
   navStack: [],
   connectedApps: {}, // connector_id -> row from smart_connectors
   platformEnabled: null, // null means "unknown/unrestricted", Set<string> when loaded
+  sidebarFeatures: null,
+  enabledSidebarFeatures: null,
   skills: [], selectedSkillIds: [], mcpServers: [], selectedMcpTools: [], selectedConnectorIds: [],
 };
 
@@ -866,6 +877,35 @@ async function doLogout() {
 // ═══════════════════════════════════════════════
 // APP INIT
 // ═══════════════════════════════════════════════
+function defaultSidebarFeatureKeys() {
+  return SIDEBAR_FEATURES.map(f => f.key);
+}
+function sidebarFeatureEnabled(key) {
+  if (!key) return true;
+  if (!S.enabledSidebarFeatures) return true;
+  return S.enabledSidebarFeatures.has(key);
+}
+function canNavigatePage(page) {
+  const feature = SIDEBAR_FEATURE_BY_PAGE[page];
+  return !feature || sidebarFeatureEnabled(feature.key);
+}
+async function loadSidebarFeatureAccess() {
+  try {
+    const d = await get('/features/sidebar');
+    S.sidebarFeatures = d.features || [];
+    S.enabledSidebarFeatures = new Set((d.enabled || defaultSidebarFeatureKeys()).map(String));
+  } catch(e) {
+    S.sidebarFeatures = SIDEBAR_FEATURES.map(f => ({ ...f, feature_key:f.key, display_name:f.label, is_enabled:true }));
+    S.enabledSidebarFeatures = new Set(defaultSidebarFeatureKeys());
+  }
+  applySidebarFeatureAccess();
+}
+function applySidebarFeatureAccess() {
+  document.querySelectorAll('[data-feature-key]').forEach(el => {
+    el.style.display = sidebarFeatureEnabled(el.dataset.featureKey) ? '' : 'none';
+  });
+}
+
 function showApp() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
@@ -879,6 +919,7 @@ function showApp() {
   }
   loadUsage();
   connectWS();
+  loadSidebarFeatureAccess();
   loadModels().then(() => navigate('chat'));
   loadConnectedApps();
 }
@@ -1008,6 +1049,11 @@ function closeSidebar() {
 // ROUTER
 // ═══════════════════════════════════════════════
 function navigate(page, params = {}) {
+  if (!canNavigatePage(page)) {
+    const feature = SIDEBAR_FEATURE_BY_PAGE[page];
+    toast(`${feature?.label || page} is disabled by admin`, 'warn');
+    page = 'chat';
+  }
   const prevPage = S.page;
   if (prevPage && prevPage !== page && !params._fromBack) {
     S.navStack.push(prevPage);
@@ -1016,7 +1062,7 @@ function navigate(page, params = {}) {
   S.page = page; closeSidebar();
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   document.getElementById('session-list-wrap').style.display = page === 'chat' ? 'flex' : 'none';
-  const pages = { chat, documents, memory, agents, playground, multimodel: multiModelPage, connectors, websites, code, livy, apikeys, settings, admin, mcp: mcpPage };
+  const pages = { chat, documents, memory, agents, playground, multimodel: multiModelPage, connectors, websites, code, livy, apikeys, settings, admin, adminUserFeatures: adminUserFeaturesPage, mcp: mcpPage };
   const fn = pages[page];
   if (fn) Promise.resolve(fn(params)).then(injectPageBackButtons).then(renderThemeToggle).catch(e => console.error(e));
 }
@@ -3286,6 +3332,7 @@ async function admin() {
     <div style="padding:12px 20px;border-bottom:1px solid #1a1a30;display:flex;gap:6px;overflow-x:auto;flex-shrink:0">
       <div class="tab active" onclick="adminTab('stats',this)">Stats</div>
       <div class="tab" onclick="adminTab('users',this)">Users</div>
+      <div class="tab" onclick="adminTab('sidebar-features',this)">Sidebar</div>
       <div class="tab" onclick="adminTab('models',this)">Models</div>
       <div class="tab" onclick="adminTab('connectors-admin',this)">🔌 Connectors</div>
       <div class="tab" onclick="adminTab('connector-logs',this)">Connector Logs</div>
@@ -3344,10 +3391,27 @@ async function adminTab(tab, el) {
           <td style="padding:10px 8px;font-size:11px;color:#4a4a6a">${u.last_login_at?fmtDate(u.last_login_at):'Never'}</td>
           <td style="padding:10px 8px;display:flex;gap:4px">
             <button class="btn btn-ghost btn-xs" onclick="adminUpgradePlan('${u.id}','${escAttr(u.email)}')">Plan</button>
+            <button class="btn btn-ghost btn-xs" onclick="navigate('adminUserFeatures',{userId:'${u.id}',email:'${escAttr(u.email)}'})">✎ Features</button>
             <button class="btn btn-ghost btn-xs" onclick="adminImpersonate('${u.id}')">👤</button>
             <button class="btn btn-ghost btn-xs" style="color:#f87171" onclick="adminDeleteUser('${u.id}','${escAttr(u.email)}')">🗑</button>
           </td>
         </tr>`).join('')}</tbody></table></div>`;
+    } else if (tab === 'sidebar-features') {
+      const d = await get('/admin/sidebar-features');
+      const rows = d.features || [];
+      const enabledCount = rows.filter(r => !!r.is_enabled).length;
+      ab.innerHTML = `<div style="display:grid;gap:14px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:13px;color:#9090b0">${enabledCount}/${rows.length} sidebar features enabled globally</span>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="adminBulkSidebarFeatures(true)">Enable All</button>
+          <button class="btn btn-ghost btn-sm" onclick="adminBulkSidebarFeatures(false)">Disable All</button>
+        </div>
+        <div class="card" style="display:grid;gap:10px">
+          <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">Global Sidebar Access</div>
+          <div style="font-size:12px;color:#9090b0">When a feature is off here, it is hidden for every user until an admin turns it on again.</div>
+          <div style="display:grid;gap:8px">${rows.map(renderAdminSidebarFeatureRow).join('')}</div>
+        </div>
+      </div>`;
     } else if (tab === 'models') {
       const d = await get('/admin/models');
       ab.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
@@ -3568,6 +3632,128 @@ async function adminTab(tab, el) {
 }
 
 // Admin helpers
+function renderAdminSidebarFeatureRow(f) {
+  const enabled = !!f.is_enabled;
+  return `<div style="display:flex;align-items:center;gap:10px;border:1px solid #1a1a30;border-radius:10px;padding:10px;background:#080812">
+    <div style="width:34px;height:34px;border-radius:8px;background:#111124;display:flex;align-items:center;justify-content:center;font-weight:700;color:#7c6ff7">${escHtml(f.icon || '')}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:700;font-size:14px">${escHtml(f.display_name || f.feature_key)}</div>
+      <div style="font-size:11px;color:#4a4a6a;font-family:'DM Mono',monospace">${escHtml(f.page_key || f.feature_key)}</div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:${enabled?'#34d399':'#9090b0'};cursor:pointer">
+      <input type="checkbox" ${enabled?'checked':''} onchange="adminToggleSidebarFeature('${escAttr(f.feature_key)}', this.checked)" style="accent-color:#7c6ff7">
+      ${enabled?'on':'off'}
+    </label>
+  </div>`;
+}
+async function adminToggleSidebarFeature(featureKey, isEnabled) {
+  try {
+    await patch('/admin/sidebar-features/'+encodeURIComponent(featureKey), { is_enabled: !!isEnabled });
+    toast(`${featureKey} ${isEnabled ? 'enabled' : 'disabled'}`, 'ok');
+    await loadSidebarFeatureAccess();
+    if (S.page === 'admin') adminTab('sidebar-features', null);
+  } catch(e) {
+    toast(e.message, 'err');
+    if (S.page === 'admin') adminTab('sidebar-features', null);
+  }
+}
+async function adminBulkSidebarFeatures(isEnabled) {
+  try {
+    await post('/admin/sidebar-features/bulk', { is_enabled: !!isEnabled });
+    toast(isEnabled ? 'Sidebar features enabled' : 'Sidebar features disabled', 'ok');
+    await loadSidebarFeatureAccess();
+    adminTab('sidebar-features', null);
+  } catch(e) { toast(e.message, 'err'); }
+}
+function userFeatureModeClass(active) {
+  return active ? 'btn-primary' : 'btn-ghost';
+}
+function renderUserFeatureAccessRow(uid, f) {
+  const key = f.feature_key;
+  const override = f.user_override;
+  const globalOn = !!f.global_enabled;
+  const effective = !!f.is_enabled;
+  return `<div style="display:grid;grid-template-columns:minmax(180px,1fr) auto auto auto;gap:10px;align-items:center;border:1px solid #1a1a30;border-radius:10px;padding:10px;background:#080812">
+    <div style="display:flex;gap:10px;align-items:center;min-width:0">
+      <div style="width:34px;height:34px;border-radius:8px;background:#111124;display:flex;align-items:center;justify-content:center;font-weight:700;color:#7c6ff7">${escHtml(f.icon || '')}</div>
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:14px">${escHtml(f.display_name || key)}</div>
+        <div style="font-size:11px;color:#4a4a6a;font-family:'DM Mono',monospace">${escHtml(f.page_key || key)}</div>
+      </div>
+    </div>
+    <span class="badge ${globalOn?'badge-ok':'badge-free'}">${globalOn?'global on':'global off'}</span>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn ${userFeatureModeClass(override === null || override === undefined)} btn-xs" onclick="adminSetUserFeature('${escAttr(uid)}','${escAttr(key)}','default')">Default</button>
+      <button class="btn ${userFeatureModeClass(override === true)} btn-xs" onclick="adminSetUserFeature('${escAttr(uid)}','${escAttr(key)}','on')">On</button>
+      <button class="btn ${userFeatureModeClass(override === false)} btn-xs" onclick="adminSetUserFeature('${escAttr(uid)}','${escAttr(key)}','off')">Off</button>
+    </div>
+    <span class="badge ${effective?'badge-ok':'badge-free'}">${effective?'visible':'hidden'}</span>
+  </div>`;
+}
+async function adminUserFeaturesPage({ userId, email } = {}) {
+  const id = userId || '';
+  if (!id) { navigate('admin'); return; }
+  document.getElementById('main-content').innerHTML = `
+  <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
+    <div class="workspace-header">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">
+        <button class="page-back-btn" onclick="goBackPage()" title="Back">‹</button>
+        <span class="page-icon">✎</span>
+        <div style="min-width:0">
+          <div class="page-title">User Feature Access</div>
+          <div id="user-feature-subtitle" style="font-size:12px;color:#4a4a6a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(email || id)}</div>
+        </div>
+      </div>
+    </div>
+    <div id="user-feature-body" style="flex:1;overflow:auto;padding:20px"></div>
+  </div>`;
+  await adminLoadUserFeatures(id);
+}
+async function adminLoadUserFeatures(uid) {
+  const body = document.getElementById('user-feature-body');
+  if (!body) return;
+  body.innerHTML = '<div style="color:#4a4a6a">Loading...</div>';
+  try {
+    const d = await get('/admin/users/'+encodeURIComponent(uid)+'/features');
+    const u = d.user || {};
+    const subtitle = document.getElementById('user-feature-subtitle');
+    if (subtitle) subtitle.textContent = `${u.email || uid} · ${u.subscription || 'free'}`;
+    body.innerHTML = `<div style="display:grid;gap:14px">
+      <div class="card" style="display:grid;gap:8px">
+        <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">${escHtml(u.email || uid)}</div>
+        <div style="font-size:12px;color:#9090b0">Set this user's sidebar visibility. Default follows the global Sidebar tab. Global off always wins.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="badge ${u.role==='admin'?'badge-warn':'badge-free'}">${escHtml(u.role || 'client')}</span>
+          <span class="badge badge-${escAttr(u.subscription || 'free')}">${escHtml(u.subscription || 'free')}</span>
+        </div>
+      </div>
+      <div style="display:grid;gap:8px">${(d.features||[]).map(f => renderUserFeatureAccessRow(uid, f)).join('')}</div>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="adminResetUserFeatures('${escAttr(uid)}')">Reset To Global Defaults</button>
+      </div>
+    </div>`;
+  } catch(e) {
+    body.innerHTML = `<div class="badge badge-err">${escHtml(e.message)}</div>`;
+  }
+}
+async function adminSetUserFeature(uid, key, mode) {
+  const value = mode === 'default' ? null : mode === 'on';
+  try {
+    await patch('/admin/users/'+encodeURIComponent(uid)+'/features', { overrides: { [key]: value } });
+    toast('User feature access updated', 'ok');
+    adminLoadUserFeatures(uid);
+  } catch(e) { toast(e.message, 'err'); }
+}
+async function adminResetUserFeatures(uid) {
+  try {
+    const d = await get('/admin/users/'+encodeURIComponent(uid)+'/features');
+    const overrides = {};
+    (d.features || []).forEach(f => { overrides[f.feature_key] = null; });
+    await patch('/admin/users/'+encodeURIComponent(uid)+'/features', { overrides });
+    toast('User feature overrides cleared', 'ok');
+    adminLoadUserFeatures(uid);
+  } catch(e) { toast(e.message, 'err'); }
+}
 let _adminConnectorSort = { key:'display_name', dir:'asc' };
 function adminConnectorRequirementText(r) {
   const envDetail = r?.env_detail || {};
