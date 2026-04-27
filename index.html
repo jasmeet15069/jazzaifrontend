@@ -3386,6 +3386,10 @@ async function admin() {
       <div class="tab" onclick="adminTab('users',this)">Users</div>
       <div class="tab" onclick="adminTab('activity',this)">Activity</div>
       <div class="tab" onclick="adminTab('ops',this)">Ops</div>
+      <div class="tab" onclick="adminTab('system-jobs',this)">Jobs</div>
+      <div class="tab" onclick="adminTab('rate-limits',this)">Limits</div>
+      <div class="tab" onclick="adminTab('security',this)">Security</div>
+      <div class="tab" onclick="adminTab('prompts',this)">Prompts</div>
       <div class="tab" onclick="adminTab('roles',this)">Roles</div>
       <div class="tab" onclick="adminTab('sidebar-features',this)">Sidebar</div>
       <div class="tab" onclick="adminTab('models',this)">Models</div>
@@ -3461,6 +3465,18 @@ async function adminTab(tab, el) {
     } else if (tab === 'ops') {
       const d = await get('/admin/platform-controls');
       ab.innerHTML = renderAdminOps(d);
+    } else if (tab === 'system-jobs') {
+      const d = await get('/admin/system-jobs');
+      ab.innerHTML = renderAdminSystemJobs(d);
+    } else if (tab === 'rate-limits') {
+      const d = await get('/admin/rate-limits');
+      ab.innerHTML = renderAdminRateLimits(d);
+    } else if (tab === 'security') {
+      const d = await get('/admin/security');
+      ab.innerHTML = renderAdminSecurity(d);
+    } else if (tab === 'prompts') {
+      const d = await get('/admin/prompt-policies');
+      ab.innerHTML = renderAdminPromptPolicies(d);
     } else if (tab === 'roles') {
       const d = await get('/admin/role-permissions');
       ab.innerHTML = renderAdminRolePermissions(d);
@@ -3792,6 +3808,166 @@ async function adminSaveBanner() {
 }
 function adminDownloadDbBackup() {
   window.open(API + '/admin/db-backup/download?token=' + encodeURIComponent(S.token || ''), '_blank');
+}
+function renderAdminSystemJobs(d = {}) {
+  const s = d.status || {};
+  const backend = s.backend || {};
+  const scheduler = s.scheduler || {};
+  const n8n = s.n8n || {};
+  const ngrok = s.ngrok || {};
+  const n8nRows = n8n.containers || [];
+  return `<div style="display:grid;gap:14px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      ${adminMetricTile('Backend', 'PID ' + (backend.pid || '-'), 'port ' + (backend.port || '-'))}
+      ${adminMetricTile('Uptime', adminMs((backend.uptime_seconds || 0) * 1000), 'current process')}
+      ${adminMetricTile('Scheduler', scheduler.running ? 'Running' : 'Stopped', `${adminNum(scheduler.jobs || 0)} jobs`)}
+      ${adminMetricTile('n8n', n8n.running ? 'Running' : 'Stopped', n8n.url || '')}
+      ${adminMetricTile('ngrok', ngrok.running ? 'Running' : 'Stopped', `${(ngrok.processes || []).length} processes`)}
+    </div>
+    <div class="card" style="display:grid;gap:12px">
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">Service Controls</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="adminRunSystemJob('reload_env')">Reload Env</button>
+        <button class="btn btn-ghost btn-sm" onclick="adminRunSystemJob('ngrok_start_8000')">Start ngrok 8000</button>
+        <button class="btn btn-danger btn-sm" onclick="adminRunSystemJob('ngrok_stop')">Stop ngrok</button>
+        <button class="btn btn-ghost btn-sm" onclick="adminRunSystemJob('n8n_start')">Start n8n</button>
+        <button class="btn btn-danger btn-sm" onclick="adminRunSystemJob('n8n_stop')">Stop n8n</button>
+        <button class="btn btn-danger btn-sm" onclick="adminRunSystemJob('backend_restart')">Restart Backend</button>
+        <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="adminTab('system-jobs',null)">Refresh</button>
+      </div>
+      <div id="system-job-result"></div>
+    </div>
+    <div class="card" style="display:grid;gap:10px">
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">n8n Containers</div>
+      <div style="display:grid;gap:8px">${n8nRows.map(r => `<div style="display:grid;grid-template-columns:140px 1fr;gap:8px;border:1px solid #1a1a30;border-radius:8px;padding:9px;background:#080812">
+        <div style="font-weight:700">${escHtml(r.name || '')}</div>
+        <div style="font-size:12px;color:#9090b0">${escHtml(r.status || '')}<div style="font-family:'DM Mono',monospace;font-size:10px;color:#4a4a6a;margin-top:3px">${escHtml(r.ports || '')}</div></div>
+      </div>`).join('') || '<div style="font-size:12px;color:#4a4a6a">No n8n Docker container found.</div>'}</div>
+    </div>
+    <div class="card" style="display:grid;gap:10px">
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">ngrok Processes</div>
+      <pre style="white-space:pre-wrap;background:#050508;border:1px solid #1a1a30;border-radius:8px;padding:10px;color:#9090b0;font-size:11px;max-height:160px;overflow:auto">${escHtml((ngrok.processes || []).join('\n') || 'No ngrok process detected.')}</pre>
+    </div>
+  </div>`;
+}
+async function adminRunSystemJob(action) {
+  if (action === 'backend_restart' && !confirm('Restart the backend now? The app may be unavailable for a few seconds.')) return;
+  if ((action === 'ngrok_stop' || action === 'n8n_stop') && !confirm('Run '+action+'?')) return;
+  const out = document.getElementById('system-job-result');
+  if (out) out.innerHTML = '<span style="font-size:12px;color:#9090b0">Running '+escHtml(action)+'...</span>';
+  try {
+    const d = await post('/admin/system-jobs/'+encodeURIComponent(action), {});
+    const r = d.result || {};
+    if (out) out.innerHTML = `<div class="badge ${r.ok?'badge-ok':'badge-err'}">${r.ok?'Done':'Failed'}</div>
+      <pre style="white-space:pre-wrap;margin-top:8px;background:#050508;border:1px solid #1a1a30;border-radius:8px;padding:10px;color:#9090b0;font-size:11px;max-height:180px;overflow:auto">${escHtml((r.stdout || r.stderr || '').trim() || action + ' completed')}</pre>`;
+    setTimeout(() => adminTab('system-jobs', null), action === 'backend_restart' ? 3500 : 900);
+  } catch(e) {
+    if (out) out.innerHTML = `<div class="badge badge-err">${escHtml(e.message)}</div>`;
+  }
+}
+function renderAdminRateLimits(d = {}) {
+  const resources = d.resources || [];
+  const plans = d.plans || [];
+  return `<div style="display:grid;gap:14px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:13px;color:#9090b0">Use -1 for unlimited. Changes apply immediately.</span>
+      <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="adminSaveRateLimits()">Save Limits</button>
+    </div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:760px">
+      <thead><tr style="font-size:10px;color:#4a4a6a;border-bottom:1px solid #1a1a30;text-transform:uppercase;letter-spacing:.08em">
+        <th style="padding:8px;text-align:left">Resource</th>
+        ${plans.map(p => `<th style="padding:8px;text-align:center">${escHtml(p.plan)}</th>`).join('')}
+      </tr></thead>
+      <tbody>${resources.map(res => `<tr style="border-bottom:1px solid #0d0d1a">
+        <td style="padding:9px 8px">
+          <div style="font-weight:700;font-size:13px">${escHtml(res.label)}</div>
+          <div style="font-size:11px;color:#4a4a6a">${escHtml(res.description || '')}</div>
+        </td>
+        ${plans.map(p => `<td style="padding:9px 8px;text-align:center"><input class="input rate-limit-input" data-plan="${escAttr(p.plan)}" data-key="${escAttr(res.key)}" type="number" value="${Number((p.limits||{})[res.key] ?? 0)}" style="max-width:110px;text-align:center"></td>`).join('')}
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+async function adminSaveRateLimits() {
+  const limits = {};
+  document.querySelectorAll('.rate-limit-input').forEach(inp => {
+    limits[inp.dataset.plan] = limits[inp.dataset.plan] || {};
+    limits[inp.dataset.plan][inp.dataset.key] = parseInt(inp.value || '0', 10);
+  });
+  try {
+    await patch('/admin/rate-limits', { limits });
+    toast('Rate limits saved','ok');
+    adminTab('rate-limits', null);
+  } catch(e) { toast(e.message,'err'); }
+}
+function renderAdminSecurity(d = {}) {
+  const users = d.users || [];
+  const totals = d.totals || {};
+  return `<div style="display:grid;gap:14px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      ${adminMetricTile('Users', adminNum(totals.users || 0), `${adminNum(totals.disabled_users || 0)} disabled`)}
+      ${adminMetricTile('Active Sessions', adminNum(totals.active_tokens || 0), 'refresh tokens')}
+      ${adminMetricTile('API Keys', adminNum(totals.active_api_keys || 0), 'active keys')}
+    </div>
+    <div style="display:grid;gap:8px">${users.map(u => `<div style="border:1px solid #1a1a30;border-radius:10px;background:#080812;padding:10px;display:grid;grid-template-columns:minmax(190px,1fr) repeat(3,minmax(70px,auto)) minmax(260px,auto);gap:10px;align-items:center">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(u.email || '')}</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px"><span class="badge ${u.role==='admin'?'badge-warn':'badge-free'}" style="font-size:9px">${escHtml(u.role || '')}</span><span class="badge badge-${escAttr(u.subscription || 'free')}" style="font-size:9px">${escHtml(u.subscription || 'free')}</span><span class="badge ${u.is_active?'badge-ok':'badge-err'}" style="font-size:9px">${u.is_active?'active':'disabled'}</span><span class="badge ${u.is_verified?'badge-ok':'badge-free'}" style="font-size:9px">${u.is_verified?'verified':'unverified'}</span></div>
+      </div>
+      <div style="text-align:right"><b>${adminNum(u.active_tokens || 0)}</b><div style="font-size:10px;color:#4a4a6a">sessions</div></div>
+      <div style="text-align:right"><b>${adminNum(u.active_api_keys || 0)}</b><div style="font-size:10px;color:#4a4a6a">keys</div></div>
+      <div style="font-size:11px;color:#9090b0">${fmtDate(u.last_login_at)}</div>
+      <div style="display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-xs" onclick="adminSecurityAction('${escAttr(u.id)}','revoke_tokens','${escAttr(u.email)}')">Force Logout</button>
+        <button class="btn btn-ghost btn-xs" onclick="adminSecurityAction('${escAttr(u.id)}','reset_password','${escAttr(u.email)}')">Reset Password</button>
+        <button class="btn ${u.is_active?'btn-danger':'btn-success'} btn-xs" onclick="adminSecurityAction('${escAttr(u.id)}','${u.is_active?'disable':'enable'}','${escAttr(u.email)}')">${u.is_active?'Disable':'Enable'}</button>
+        <button class="btn btn-ghost btn-xs" onclick="adminSecurityAction('${escAttr(u.id)}','${u.is_verified?'unverify':'verify'}','${escAttr(u.email)}')">${u.is_verified?'Unverify':'Verify'}</button>
+      </div>
+    </div>`).join('') || '<div style="font-size:12px;color:#4a4a6a">No users found.</div>'}</div>
+  </div>`;
+}
+async function adminSecurityAction(uid, action, email) {
+  const body = {};
+  if (action === 'reset_password') {
+    const pw = prompt('New password for '+email+':');
+    if (!pw) return;
+    body.password = pw;
+  } else if (!confirm(action.replace('_',' ')+' for '+email+'?')) return;
+  try {
+    await post('/admin/security/users/'+encodeURIComponent(uid)+'/'+encodeURIComponent(action), body);
+    toast('Security action complete','ok');
+    adminTab('security', null);
+  } catch(e) { toast(e.message,'err'); }
+}
+function renderAdminPromptPolicies(d = {}) {
+  const p = d.policies || {};
+  return `<div style="display:grid;gap:14px">
+    <div class="card" style="display:grid;gap:8px">
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700">Prompt Governance</div>
+      <div style="font-size:12px;color:#9090b0">These policies are stored for admin control. Chat runtime is not changed from this panel, per your no-chatbot-touch rule.</div>
+      <span class="badge badge-info" style="width:max-content">chat runtime applied: ${p.chat_runtime_applied ? 'yes' : 'no'}</span>
+    </div>
+    ${[
+      ['assistant_instructions','Assistant Instructions','Global behavior notes for future controlled rollout.'],
+      ['tool_routing_rules','Tool Routing Rules','Rules for how tools should be selected and described.'],
+      ['website_builder_instructions','Website Builder Instructions','Reusable guidance for generated website/project behavior.'],
+      ['code_runner_policy','Code Runner Policy','Safety and execution notes for code runs.'],
+      ['admin_notes','Admin Notes','Private operational notes.'],
+    ].map(([key,label,hint]) => `<div class="card" style="display:grid;gap:8px">
+      <div><div style="font-weight:700">${escHtml(label)}</div><div style="font-size:11px;color:#4a4a6a">${escHtml(hint)}</div></div>
+      <textarea class="input prompt-policy-input" data-key="${escAttr(key)}" rows="5" placeholder="${escAttr(label)}">${escHtml(p[key] || '')}</textarea>
+    </div>`).join('')}
+    <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary" onclick="adminSavePromptPolicies()">Save Prompt Policies</button></div>
+  </div>`;
+}
+async function adminSavePromptPolicies() {
+  const body = {};
+  document.querySelectorAll('.prompt-policy-input').forEach(el => body[el.dataset.key] = el.value || '');
+  try {
+    await patch('/admin/prompt-policies', body);
+    toast('Prompt policies saved','ok');
+    adminTab('prompts', null);
+  } catch(e) { toast(e.message,'err'); }
 }
 function renderAdminUserActivity(d = {}) {
   const users = d.users || [];
