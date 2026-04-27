@@ -637,9 +637,21 @@ const CONNECTOR_CATALOG = [
 ];
 
 const CONNECTOR_BY_ID = Object.fromEntries(CONNECTOR_CATALOG.map(c => [c.id, c]));
+const SLASH_ALIASES = [
+  { cmd:'calendar', name:'Google Calendar', icon:'📅', desc:'Alias for /google_calendar.', actions:['list_events'] },
+  { cmd:'cal', name:'Google Calendar', icon:'📅', desc:'Alias for /google_calendar.', actions:['list_events'] },
+  { cmd:'drive', name:'Google Drive', icon:'💾', desc:'Alias for /google_drive.', actions:['list_files'] },
+  { cmd:'sheets', name:'Google Sheets', icon:'📊', desc:'Alias for /google_sheets.', actions:['read_range'] },
+  { cmd:'meet', name:'Google Meet', icon:'📺', desc:'Alias for /google_meet.', actions:['create_meeting'] },
+  { cmd:'teams', name:'Microsoft Teams', icon:'🔷', desc:'Alias for /microsoft_teams.', actions:['send_message'] },
+  { cmd:'powerbi', name:'Power BI', icon:'📈', desc:'Alias for /power_bi.', actions:['list_datasets'] },
+  { cmd:'gh', name:'GitHub', icon:'🐙', desc:'Alias for /github.', actions:['list_repos'] },
+  { cmd:'mail', name:'Gmail', icon:'📧', desc:'Alias for /gmail.', actions:['list_emails'] },
+];
 const SLASH_COMMANDS = [
   { cmd:'web', name:'Web Search', icon:'🌐', desc:'Search the live web and cite results.', actions:['search'] },
   { cmd:'search', name:'Web Search', icon:'🌐', desc:'Alias for /web.', actions:['search'] },
+  ...SLASH_ALIASES,
   ...CONNECTOR_CATALOG.map(c => ({ cmd: c.id, name: c.name, icon: c.icon, desc: c.desc, actions: c.actions }))
 ];
 
@@ -650,7 +662,7 @@ const S = {
   user: null, token: null, refresh: null,
   page: 'chat', sessions: [], activeSession: null,
   messages: [], streaming: false, forceFreshChat: false,
-  modelId: 'llama-3.3-70b-versatile', useRag: true, useWeb: false, planMode: false,
+  modelId: 'llama-3.3-70b-versatile', useRag: true, useWeb: false, planMode: false, agentMode: false,
   notifications: [], notifCount: 0,
   models: [
     { id:'llama-3.3-70b-versatile', label:'Llama 3.3 70B', censored:true, tags:[] },
@@ -690,6 +702,7 @@ function loadSaved() {
     if (typeof prefs.useRag === 'boolean') S.useRag = prefs.useRag;
     if (typeof prefs.useWeb === 'boolean') S.useWeb = prefs.useWeb;
     if (typeof prefs.planMode === 'boolean') S.planMode = prefs.planMode;
+    if (typeof prefs.agentMode === 'boolean') S.agentMode = prefs.agentMode;
     if (Array.isArray(prefs.selectedConnectorIds)) S.selectedConnectorIds = prefs.selectedConnectorIds;
     if (Array.isArray(prefs.selectedSkillIds)) S.selectedSkillIds = prefs.selectedSkillIds;
     if (Array.isArray(prefs.selectedMcpTools)) S.selectedMcpTools = prefs.selectedMcpTools;
@@ -697,7 +710,7 @@ function loadSaved() {
 }
 function saveToolPrefs() {
   localStorage.setItem('jazz_tool_prefs', JSON.stringify({
-    useRag:S.useRag, useWeb:S.useWeb, planMode:S.planMode,
+    useRag:S.useRag, useWeb:S.useWeb, planMode:S.planMode, agentMode:S.agentMode,
     selectedConnectorIds:S.selectedConnectorIds,
     selectedSkillIds:S.selectedSkillIds, selectedMcpTools:S.selectedMcpTools
   }));
@@ -1043,13 +1056,16 @@ async function chat({ sessionId } = {}) {
         <div id="chat-meta" style="font-size:11px;color:#4a4a6a;margin-top:1px"></div>
       </div>
       <label class="chat-toggle" style="display:flex;align-items:center;gap:4px;font-size:12px;color:#9090b0;cursor:pointer;flex-shrink:0">
-        <input type="checkbox" ${S.useRag?'checked':''} onchange="S.useRag=this.checked" style="accent-color:#7c6ff7"> RAG
+        <input type="checkbox" ${S.useRag?'checked':''} onchange="S.useRag=this.checked;saveToolPrefs();updateToolsCount()" style="accent-color:#7c6ff7"> RAG
       </label>
       <label class="chat-toggle" style="display:flex;align-items:center;gap:4px;font-size:12px;color:#9090b0;cursor:pointer;flex-shrink:0">
-        <input type="checkbox" ${S.useWeb?'checked':''} onchange="S.useWeb=this.checked" style="accent-color:#7c6ff7"> Web
+        <input type="checkbox" ${S.useWeb?'checked':''} onchange="S.useWeb=this.checked;saveToolPrefs();updateToolsCount()" style="accent-color:#7c6ff7"> Web
       </label>
       <label class="chat-toggle" style="display:flex;align-items:center;gap:4px;font-size:12px;color:#9090b0;cursor:pointer;flex-shrink:0">
-        <input type="checkbox" ${S.planMode?'checked':''} onchange="S.planMode=this.checked" style="accent-color:#7c6ff7"> Plan
+        <input type="checkbox" ${S.planMode?'checked':''} onchange="S.planMode=this.checked;saveToolPrefs();updateToolsCount()" style="accent-color:#7c6ff7"> Plan
+      </label>
+      <label class="chat-toggle" style="display:flex;align-items:center;gap:4px;font-size:12px;color:#9090b0;cursor:pointer;flex-shrink:0">
+        <input type="checkbox" ${S.agentMode?'checked':''} onchange="S.agentMode=this.checked;saveToolPrefs();updateToolsCount()" style="accent-color:#7c6ff7"> Agent
       </label>
       <button class="context-chip" id="context-window-btn" onclick="toggleContextPopover(event)" title="Context window">
         <span class="context-ring" id="context-ring" style="--pct:0"></span>
@@ -1185,7 +1201,7 @@ function selectSlash(cmd) {
 // ── Connected apps quick bar ──
 const _CONNECTOR_SLASH_MAP = {
   'google_calendar':'calendar','google_drive':'drive','google_sheets':'sheets',
-  'google_meet':'meet','microsoft_teams':'slack','outlook':'mail','bigquery':'search',
+  'google_meet':'meet','microsoft_teams':'teams','outlook':'outlook','bigquery':'bigquery',
 };
 function _connSlashCmd(connId) { return _CONNECTOR_SLASH_MAP[connId] || connId; }
 function renderConnQuickBar() {
@@ -1578,6 +1594,7 @@ function selectedToolOptions() {
     rag: !!S.useRag,
     web_search: !!S.useWeb,
     plan_mode: !!S.planMode,
+    agent_mode: !!S.agentMode,
     connector_ids: selectedConnectors,
     mcp_tools: S.selectedMcpTools || [],
     skill_ids: S.selectedSkillIds || [],
@@ -1586,7 +1603,7 @@ function selectedToolOptions() {
 function updateToolsCount() {
   const connectedIds = Object.keys(S.connectedApps || {});
   const connectorCount = (S.selectedConnectorIds?.length ? S.selectedConnectorIds.filter(id => connectedIds.includes(id)).length : connectedIds.length);
-  const n = (S.useRag?1:0) + (S.useWeb?1:0) + (S.planMode?1:0) + connectorCount + (S.selectedSkillIds?.length||0) + (S.selectedMcpTools?.length||0);
+  const n = (S.useRag?1:0) + (S.useWeb?1:0) + (S.planMode?1:0) + (S.agentMode?1:0) + connectorCount + (S.selectedSkillIds?.length||0) + (S.selectedMcpTools?.length||0);
   const el = document.getElementById('tools-count');
   if (el) el.textContent = n;
 }
@@ -1646,6 +1663,7 @@ async function openToolsDrawer() {
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="td-rag" ${S.useRag?'checked':''} style="accent-color:#7c6ff7"> RAG</label>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="td-web" ${S.useWeb?'checked':''} style="accent-color:#7c6ff7"> Web Search</label>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="td-plan" ${S.planMode?'checked':''} style="accent-color:#7c6ff7"> Plan Mode</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="td-agent" ${S.agentMode?'checked':''} style="accent-color:#7c6ff7"> Tool Agent</label>
       </div>
       <div><div style="font-size:12px;font-weight:700;margin-bottom:6px;color:#9090b0">Connected Apps</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">${appRows}</div></div>
       <div><div style="font-size:12px;font-weight:700;margin-bottom:6px;color:#9090b0">Skills</div><div style="display:grid;gap:8px">${skillRows}</div></div>
@@ -1661,6 +1679,7 @@ function applyToolsDrawer() {
   S.useRag = !!document.getElementById('td-rag')?.checked;
   S.useWeb = !!document.getElementById('td-web')?.checked;
   S.planMode = !!document.getElementById('td-plan')?.checked;
+  S.agentMode = !!document.getElementById('td-agent')?.checked;
   S.selectedConnectorIds = [...document.querySelectorAll('.tool-app:checked')].map(x => x.value);
   S.selectedSkillIds = [...document.querySelectorAll('.tool-skill:checked')].map(x => x.value);
   S.selectedMcpTools = [...document.querySelectorAll('.tool-mcp:checked')].map(x => ({ server_id:x.dataset.server, server_name:x.dataset.serverName, name:x.value }));
@@ -1672,6 +1691,8 @@ const CONNECTOR_SLASH_MAP = {
   google_drive: 'drive',
   google_sheets: 'sheets',
   google_meet: 'meet',
+  microsoft_teams: 'teams',
+  power_bi: 'powerbi',
   github: 'github',
   gmail: 'gmail',
   slack: 'slack',
@@ -1821,13 +1842,14 @@ function renderQueuePanel() {
 function removeQueueItem(id) { S.chatQueue = S.chatQueue.filter(x => x.id !== id); renderQueuePanel(); }
 
 function getSlashCommandFromMessage(text) {
-  const m = String(text || '').trim().match(/^\/([a-z0-9_-]+)(?:\s|$)/i);
-  return m ? m[1].toLowerCase() : '';
+  const m = String(text || '').match(/(^|[\s([{])\/([a-z0-9_-]+)(?=\s|$)/i);
+  return m ? m[2].toLowerCase() : '';
 }
-function isConnectorSlashMessage(text) {
+function isToolSlashMessage(text) {
   const cmd = getSlashCommandFromMessage(text);
   if (!cmd) return false;
   if (CONNECTOR_BY_ID[cmd]) return true;
+  if ((SLASH_COMMANDS || []).some(c => String(c.cmd).toLowerCase() === cmd)) return true;
   return Object.values(CONNECTOR_SLASH_MAP || {}).some(v => String(v).toLowerCase() === cmd);
 }
 
@@ -1867,7 +1889,7 @@ async function _sendChatInternal(msg, imgData) {
   let full = '', displayText = '', thinkingContent = '';
   let liveToolEvents = [];
   let mode = 'normal';
-  let suppressLiveAssistant = isConnectorSlashMessage(msg);
+  let suppressLiveAssistant = isToolSlashMessage(msg);
 
   function _onDone(d) {
     S.streaming = false;
@@ -1928,6 +1950,9 @@ async function _sendChatInternal(msg, imgData) {
     scrollBottom();
   }
   function _onToolEvent(d) {
+    if ((d.type === 'tool_start' && d.tool === 'slash') || (d.type === 'tool_result' && d.tool && d.tool !== 'web_search')) {
+      suppressLiveAssistant = true;
+    }
     if (d.type === 'model_switch' && d.selected && d.model_id) {
       S.modelId = d.model_id;
       updateModelPill();
@@ -1976,7 +2001,7 @@ async function _sendChatInternal(msg, imgData) {
 
   async function _tryPostStream() {
     try {
-      const body = { message: msg, model_id: S.modelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, tools: selectedToolOptions(), skill_ids: S.selectedSkillIds||[], session_id: S.activeSession||undefined, image_url: imgData||undefined };
+      const body = { message: msg, model_id: S.modelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, agent_mode: S.agentMode, tools: selectedToolOptions(), skill_ids: S.selectedSkillIds||[], session_id: S.activeSession||undefined, image_url: imgData||undefined };
       const resp = await apiFetch(`${API}/chat/stream`, { method:'POST', headers:{ 'Authorization':'Bearer '+S.token, 'Content-Type':'application/json' }, body: JSON.stringify(body) });
       if (!resp.ok) { const e = await resp.json().catch(() => ({ detail: resp.statusText })); _onError(errText(e.detail || e.message || e || 'POST failed')); return; }
       const reader = resp.body.getReader(), dec = new TextDecoder();
@@ -2000,7 +2025,7 @@ async function _sendChatInternal(msg, imgData) {
   }
 
   try {
-    const preferPost = msg.length > 1800 || !!imgData;
+    const preferPost = msg.length > 1800 || !!imgData || S.agentMode;
     const esWorked = preferPost ? false : await _tryEventSource();
     if (!esWorked) await _tryPostStream();
   } catch(err) { _onError(err.message); }
@@ -3364,7 +3389,9 @@ async function adminTab(tab, el) {
       const d = await get('/admin/skills');
       ab.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
         <span style="font-size:13px;color:#9090b0">${d.total||0} skills</span>
-        <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="adminSkillModal()">+ Add Skill</button>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="adminSkillTemplate()">SKILL.md Template</button>
+        <button class="btn btn-ghost btn-sm" onclick="adminImportSkillModal()">Import SKILL.md</button>
+        <button class="btn btn-primary btn-sm" onclick="adminSkillModal()">+ Add Skill</button>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
         ${(d.skills||[]).map(s => `<div class="card" style="display:grid;gap:8px">
@@ -3651,6 +3678,46 @@ function adminSkillModal(id='') {
       <button class="btn btn-primary" onclick="adminSaveSkill('${id}')">Save</button>
     </div>
   </div>`);
+}
+async function adminSkillTemplate() {
+  try {
+    const d = await get('/admin/skills/markdown-template');
+    openModal(`<div class="modal" style="width:760px">
+      <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:700;margin-bottom:12px">SKILL.md Template</div>
+      <textarea class="input" rows="18" style="font-family:'DM Mono',monospace;font-size:12px">${escHtml(d.template || '')}</textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn btn-ghost" onclick="navigator.clipboard?.writeText(document.querySelector('#modal-container textarea')?.value || '');toast('Copied','ok')">Copy</button>
+        <button class="btn btn-primary" onclick="closeModal()">Done</button>
+      </div>
+    </div>`);
+  } catch(e) { toast(e.message,'err'); }
+}
+function adminImportSkillModal() {
+  openModal(`<div class="modal" style="width:760px">
+    <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:700;margin-bottom:12px">Import SKILL.md</div>
+    <div style="display:grid;gap:10px">
+      <input class="input" id="sk-md-name" placeholder="Optional skill name override">
+      <textarea class="input" id="sk-md" rows="18" style="font-family:'DM Mono',monospace;font-size:12px" placeholder="# Skill Name&#10;&#10;## Description&#10;...&#10;&#10;## Activation Keywords&#10;keyword, phrase&#10;&#10;## Instructions&#10;..."></textarea>
+      <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="sk-md-enabled" checked style="accent-color:#7c6ff7"> Enabled</label>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="adminImportSkillMarkdown()">Import</button>
+    </div>
+  </div>`);
+}
+async function adminImportSkillMarkdown() {
+  const markdown = document.getElementById('sk-md')?.value || '';
+  if (!markdown.trim()) { toast('Paste a SKILL.md first','err'); return; }
+  const body = {
+    name: document.getElementById('sk-md-name')?.value.trim() || undefined,
+    markdown,
+    is_enabled: !!document.getElementById('sk-md-enabled')?.checked,
+  };
+  try {
+    await post('/admin/skills/import-markdown', body);
+    closeModal(); toast('SKILL.md imported','ok'); adminTab('skills-admin', null);
+  } catch(e) { toast(e.message,'err'); }
 }
 async function adminSaveSkill(id='') {
   let resources = [], script_metadata = {};
