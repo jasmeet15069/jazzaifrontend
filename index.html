@@ -2680,7 +2680,6 @@ async function _sendChatInternal(msg, attachments = []) {
     document.getElementById('typing-ind').style.display = 'none';
     if (d?.model_id) {
       activeModelId = d.model_id;
-      S.modelId = d.model_id;
       updateModelPill();
       loadContextStatus();
     }
@@ -2749,7 +2748,6 @@ async function _sendChatInternal(msg, attachments = []) {
     }
     if (d.type === 'model_switch' && d.selected && d.model_id) {
       activeModelId = d.model_id;
-      S.modelId = d.model_id;
       setModelHealth(d.model_id, 'checking', 'router selected this model');
       updateModelPill();
       loadContextStatus();
@@ -2780,7 +2778,7 @@ async function _sendChatInternal(msg, attachments = []) {
   async function _tryEventSource() {
     return new Promise(resolve => {
       const toolOptions = selectedToolOptions();
-      const params = new URLSearchParams({ message: apiMsg, model_id: S.modelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, tools_json: JSON.stringify(toolOptions), skill_ids: (S.selectedSkillIds||[]).join(','), token: S.token });
+      const params = new URLSearchParams({ message: apiMsg, model_id: requestedModelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, tools_json: JSON.stringify(toolOptions), skill_ids: (S.selectedSkillIds||[]).join(','), token: S.token });
       if (S.activeSession) params.append('session_id', S.activeSession);
       if (imgData) params.append('image_url', imgData);
       const es = new EventSource(`${API}/chat/stream?${params}`);
@@ -2788,7 +2786,7 @@ async function _sendChatInternal(msg, attachments = []) {
       const timeout = setTimeout(() => { if (!started) { es.close(); resolve(false); } }, 6000);
       es.onmessage = e => {
         let d; try { d = JSON.parse(e.data); } catch { return; }
-        if (d.type === 'start') { clearTimeout(timeout); started = true; if (d.model_id) { activeModelId = d.model_id; S.modelId = d.model_id; setModelHealth(d.model_id, 'checking', 'stream started'); updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; loadContextStatus(); } resolve(true); }
+        if (d.type === 'start') { clearTimeout(timeout); started = true; if (d.model_id) { activeModelId = d.model_id; setModelHealth(d.model_id, 'checking', 'stream started'); updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; loadContextStatus(); } resolve(true); }
         if (d.type === 'thinking_content') _onThinking(d.content);
         if (['tool_start','tool_progress','tool_result','tool_error','skill_loaded','model_switch'].includes(d.type)) _onToolEvent(d);
         if (d.type === 'delta') _onDelta(d.content);
@@ -2801,7 +2799,7 @@ async function _sendChatInternal(msg, attachments = []) {
 
   async function _tryPostStream() {
     try {
-      const body = { message: apiMsg, model_id: S.modelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, agent_mode: S.agentMode, tools: selectedToolOptions(), skill_ids: S.selectedSkillIds||[], session_id: S.activeSession||undefined, image_url: imgData||undefined };
+      const body = { message: apiMsg, model_id: requestedModelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, agent_mode: S.agentMode, tools: selectedToolOptions(), skill_ids: S.selectedSkillIds||[], session_id: S.activeSession||undefined, image_url: imgData||undefined };
       const resp = await apiFetch(`${API}/chat/stream`, { method:'POST', headers:{ 'Authorization':'Bearer '+S.token, 'Content-Type':'application/json' }, body: JSON.stringify(body) });
       if (!resp.ok) { const e = await resp.json().catch(() => ({ detail: resp.statusText })); _onError(errText(e.detail || e.message || e || 'POST failed')); return; }
       const reader = resp.body.getReader(), dec = new TextDecoder();
@@ -2813,7 +2811,7 @@ async function _sendChatInternal(msg, attachments = []) {
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           let d; try { d = JSON.parse(line.slice(6)); } catch { continue; }
-          if (d.type === 'start') { if (d.model_id) { activeModelId = d.model_id; S.modelId = d.model_id; setModelHealth(d.model_id, 'checking', 'stream started'); updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; loadContextStatus(); } }
+          if (d.type === 'start') { if (d.model_id) { activeModelId = d.model_id; setModelHealth(d.model_id, 'checking', 'stream started'); updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; loadContextStatus(); } }
           if (d.type === 'thinking_content') _onThinking(d.content);
           if (['tool_start','tool_progress','tool_result','tool_error','skill_loaded','model_switch'].includes(d.type)) _onToolEvent(d);
           if (d.type === 'delta') _onDelta(d.content);
