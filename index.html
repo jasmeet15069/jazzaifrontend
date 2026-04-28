@@ -247,6 +247,58 @@ select.input{cursor:pointer;appearance:none}
 .section-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:700;color:#e4e4f4}
 .log-line{font-family:'DM Mono',monospace;font-size:11.5px;padding:2px 0;border-bottom:1px solid #0c0c1a;line-height:1.5}
 
+/* -- Live voice HUD -- */
+.live-voice-modal{width:min(720px,calc(100vw - 28px));padding:0;overflow:hidden;background:#05070d;border:1px solid #1c3352;box-shadow:0 24px 80px rgba(0,0,0,.65),0 0 48px rgba(45,212,191,.1)}
+.live-voice-shell{position:relative;padding:24px;isolation:isolate;background:linear-gradient(135deg,rgba(13,20,34,.96),rgba(5,7,13,.98) 58%,rgba(8,16,28,.96)),repeating-linear-gradient(0deg,rgba(125,249,255,.04) 0,rgba(125,249,255,.04) 1px,transparent 1px,transparent 16px)}
+.live-voice-shell:before{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(90deg,transparent,rgba(125,249,255,.12),transparent);transform:translateX(-100%);animation:lvScan 5s linear infinite;pointer-events:none;z-index:-1}
+.live-voice-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+.live-voice-title{display:flex;align-items:center;gap:14px;min-width:0}
+.live-voice-mark{width:44px;height:44px;border:1px solid rgba(125,249,255,.45);border-radius:10px;display:grid;place-items:center;color:#7df9ff;font-family:'DM Mono',monospace;font-weight:800;box-shadow:inset 0 0 16px rgba(125,249,255,.12),0 0 18px rgba(125,249,255,.16)}
+.live-voice-kicker{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#56cfe1}
+.live-voice-name{font-family:'Syne',sans-serif;font-size:24px;font-weight:800;color:#f3f7ff;line-height:1.1}
+.live-voice-room{font-family:'DM Mono',monospace;font-size:11px;color:#7f8ca8;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px}
+.live-voice-status{border:1px solid rgba(125,249,255,.22);border-radius:8px;padding:10px 12px;background:rgba(3,10,18,.72);color:#9be8ff;font-family:'DM Mono',monospace;font-size:12px;line-height:1.4;box-shadow:inset 0 0 18px rgba(125,249,255,.06)}
+.live-voice-status.ok{border-color:rgba(52,211,153,.45);color:#34d399;background:rgba(3,38,32,.72)}
+.live-voice-status.warn{border-color:rgba(251,191,36,.5);color:#fbbf24;background:rgba(45,28,4,.75)}
+.live-voice-status.err{border-color:rgba(248,113,113,.5);color:#f87171;background:rgba(50,8,12,.78)}
+.live-voice-hud{display:grid;grid-template-columns:minmax(180px,240px) 1fr;gap:22px;align-items:center;margin:18px 0 22px}
+.live-voice-core{height:210px;position:relative;display:grid;place-items:center}
+.live-voice-ring{position:absolute;border-radius:50%;border:1px solid rgba(125,249,255,.28);box-shadow:0 0 24px rgba(125,249,255,.12),inset 0 0 24px rgba(125,249,255,.08)}
+.live-voice-ring.r1{width:190px;height:190px;animation:lvRotate 12s linear infinite}
+.live-voice-ring.r2{width:142px;height:142px;border-style:dashed;animation:lvRotate 8s linear reverse infinite}
+.live-voice-ring.r3{width:92px;height:92px;border-color:rgba(124,111,247,.42);animation:lvPulse 1.8s ease-in-out infinite}
+.live-voice-core-dot{width:36px;height:36px;border-radius:50%;background:#7df9ff;box-shadow:0 0 22px #7df9ff,0 0 54px rgba(124,111,247,.42)}
+.live-voice-shell[data-state="connected"] .live-voice-ring.r3,.live-voice-shell[data-state="speaking"] .live-voice-ring.r3{border-color:rgba(52,211,153,.7);box-shadow:0 0 30px rgba(52,211,153,.28),inset 0 0 20px rgba(52,211,153,.12)}
+.live-voice-shell[data-state="error"] .live-voice-core-dot{background:#f87171;box-shadow:0 0 24px rgba(248,113,113,.75)}
+.live-voice-panel{min-width:0;border:1px solid rgba(125,249,255,.16);border-radius:10px;background:rgba(4,8,18,.58);padding:16px}
+.live-voice-agent{font-family:'DM Mono',monospace;font-size:11px;color:#6ee7f9;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.live-voice-wave{height:86px;display:flex;align-items:center;gap:7px;padding:10px 0}
+.live-voice-wave span{display:block;width:8px;height:22px;border-radius:999px;background:linear-gradient(#7df9ff,#7c6ff7);box-shadow:0 0 14px rgba(125,249,255,.35);animation:lvBars 1.1s ease-in-out infinite;opacity:.82}
+.live-voice-wave span:nth-child(2){animation-delay:.08s}.live-voice-wave span:nth-child(3){animation-delay:.16s}.live-voice-wave span:nth-child(4){animation-delay:.24s}.live-voice-wave span:nth-child(5){animation-delay:.32s}.live-voice-wave span:nth-child(6){animation-delay:.4s}.live-voice-wave span:nth-child(7){animation-delay:.48s}.live-voice-wave span:nth-child(8){animation-delay:.56s}.live-voice-wave span:nth-child(9){animation-delay:.64s}
+.live-voice-shell[data-state="idle"] .live-voice-wave span,.live-voice-shell[data-state="stopped"] .live-voice-wave span{animation-play-state:paused;opacity:.32;height:16px}
+.live-voice-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.live-voice-metric{border:1px solid rgba(125,249,255,.14);border-radius:8px;padding:8px;background:rgba(125,249,255,.04);min-width:0}
+.live-voice-metric b{display:block;font-family:'DM Mono',monospace;font-size:10px;color:#63708e;font-weight:700;text-transform:uppercase;margin-bottom:4px}
+.live-voice-metric span{display:block;color:#dbeafe;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#live-voice-audio{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+.live-voice-hidden-audio{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}
+.live-voice-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.live-voice-action{min-width:92px;border-radius:8px}
+@keyframes lvScan{0%{transform:translateX(-100%)}55%,100%{transform:translateX(100%)}}
+@keyframes lvRotate{to{transform:rotate(360deg)}}
+@keyframes lvPulse{0%,100%{transform:scale(.96);opacity:.7}50%{transform:scale(1.05);opacity:1}}
+@keyframes lvBars{0%,100%{height:18px}50%{height:64px}}
+@media(max-width:680px){
+  .live-voice-shell{padding:18px}
+  .live-voice-top{align-items:flex-start;flex-direction:column}
+  .live-voice-hud{grid-template-columns:1fr}
+  .live-voice-core{height:180px}
+  .live-voice-ring.r1{width:160px;height:160px}
+  .live-voice-ring.r2{width:120px;height:120px}
+  .live-voice-actions{justify-content:stretch}
+  .live-voice-action{flex:1}
+}
+
 /* ── Notif ── */
 .notif-dot{width:7px;height:7px;background:#f87171;border-radius:50%;position:absolute;top:3px;right:3px}
 .notif-panel{position:fixed;top:56px;right:12px;width:320px;max-height:420px;background:#0c0c1a;border:1px solid #1a1a30;border-radius:12px;z-index:400;padding:12px;display:none;box-shadow:0 8px 32px rgba(0,0,0,.6);overflow-y:auto}
@@ -2293,11 +2345,18 @@ function liveVoiceStatusStyle(type = 'info') {
   const c = colors[type] || colors.info;
   return `background:${c[0]};border:1px solid ${c[1]};color:${c[1]}`;
 }
+function setLiveVoiceHudState(state) {
+  const shell = document.getElementById('live-voice-shell');
+  if (shell) shell.dataset.state = state || 'idle';
+  const link = document.getElementById('live-voice-link-state');
+  if (link) link.textContent = state === 'connected' || state === 'speaking' ? 'online' : (state === 'error' ? 'fault' : 'standby');
+}
 function setLiveVoiceStatus(msg, type = 'info') {
   const el = document.getElementById('live-voice-status');
   if (!el) return;
-  el.style.cssText = `${liveVoiceStatusStyle(type)};border-radius:10px;padding:10px 12px;font-size:13px`;
+  el.className = `live-voice-status ${type}`;
   el.textContent = msg;
+  setLiveVoiceHudState(type === 'ok' ? 'connected' : (type === 'err' ? 'error' : (type === 'warn' ? 'stopped' : 'idle')));
 }
 function setLiveVoiceBusy(isBusy) {
   const start = document.getElementById('live-voice-start');
@@ -2306,20 +2365,44 @@ function setLiveVoiceBusy(isBusy) {
   if (stop) stop.disabled = isBusy || !S.liveVoiceConnected;
 }
 async function openLiveVoice() {
-  openModal(`<div class="modal" style="width:560px">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      <div style="width:34px;height:34px;border-radius:10px;background:#111124;border:1px solid #252540;display:flex;align-items:center;justify-content:center">&#128266;</div>
-      <div>
-        <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700">Live Voice</div>
-        <div id="live-voice-room-meta" style="font-size:12px;color:#9090b0;margin-top:2px">Checking LiveKit...</div>
+  openModal(`<div class="modal live-voice-modal">
+    <div class="live-voice-shell" id="live-voice-shell" data-state="${S.liveVoiceConnected ? 'connected' : 'idle'}">
+      <div class="live-voice-top">
+        <div class="live-voice-title">
+          <div class="live-voice-mark">JZ</div>
+          <div>
+            <div class="live-voice-kicker">Live neural link</div>
+            <div class="live-voice-name">JAZZ Voice</div>
+            <div id="live-voice-room-meta" class="live-voice-room">Checking LiveKit...</div>
+          </div>
+        </div>
+        <div id="live-voice-status" class="live-voice-status">Idle</div>
       </div>
-    </div>
-    <div id="live-voice-status" style="${liveVoiceStatusStyle('info')};border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px">Idle</div>
-    <div id="live-voice-audio" style="display:grid;gap:8px;margin-bottom:14px"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
-      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
-      <button class="btn btn-danger" id="live-voice-stop" onclick="stopLiveVoice()" ${S.liveVoiceConnected?'':'disabled'}>Stop</button>
-      <button class="btn btn-primary" id="live-voice-start" onclick="startLiveVoice()" ${S.liveVoiceConnected?'disabled':''}>Start</button>
+      <div class="live-voice-hud">
+        <div class="live-voice-core" aria-hidden="true">
+          <div class="live-voice-ring r1"></div>
+          <div class="live-voice-ring r2"></div>
+          <div class="live-voice-ring r3"></div>
+          <div class="live-voice-core-dot"></div>
+        </div>
+        <div class="live-voice-panel">
+          <div class="live-voice-agent" id="live-voice-agent">agent standby</div>
+          <div class="live-voice-wave" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div class="live-voice-metrics">
+            <div class="live-voice-metric"><b>link</b><span id="live-voice-link-state">${S.liveVoiceConnected ? 'online' : 'standby'}</span></div>
+            <div class="live-voice-metric"><b>input</b><span>auto</span></div>
+            <div class="live-voice-metric"><b>default</b><span>Hindi</span></div>
+          </div>
+        </div>
+      </div>
+      <div id="live-voice-audio" aria-hidden="true"></div>
+      <div class="live-voice-actions">
+        <button class="btn btn-ghost live-voice-action" onclick="closeModal()">Close</button>
+        <button class="btn btn-danger live-voice-action" id="live-voice-stop" onclick="stopLiveVoice()" ${S.liveVoiceConnected?'':'disabled'}>Stop</button>
+        <button class="btn btn-primary live-voice-action" id="live-voice-start" onclick="startLiveVoice()" ${S.liveVoiceConnected?'disabled':''}>Start</button>
+      </div>
     </div>
   </div>`);
   setLiveVoiceBusy(false);
@@ -2328,6 +2411,7 @@ async function openLiveVoice() {
     const meta = document.getElementById('live-voice-room-meta');
     if (meta) meta.textContent = d.available ? 'LiveKit ready' : 'LiveKit not configured';
     setLiveVoiceStatus(S.liveVoiceConnected ? 'Live voice is connected.' : (d.available ? 'Ready to start a voice room.' : 'LiveKit credentials are missing on the server.'), d.available ? 'ok' : 'warn');
+    if (!S.liveVoiceConnected && d.available) setLiveVoiceHudState('idle');
   } catch(e) {
     setLiveVoiceStatus(e.message || 'Unable to check LiveKit status', 'err');
   }
@@ -2335,17 +2419,16 @@ async function openLiveVoice() {
 function attachLiveVoiceTrack(track, participant) {
   const wrap = document.getElementById('live-voice-audio');
   if (!wrap || !track || track.kind !== 'audio') return;
-  const id = 'live-audio-' + (participant?.identity || Date.now());
-  const row = document.createElement('div');
-  row.id = id;
-  row.style.cssText = 'border:1px solid #1a1a30;border-radius:10px;padding:9px 10px;background:#080812;font-size:12px;color:#9090b0;display:grid;gap:6px';
-  row.innerHTML = `<div style="color:#e4e4f4;font-weight:600">${escHtml(participant?.name || participant?.identity || 'Voice participant')}</div>`;
   const audio = track.attach();
   audio.autoplay = true;
-  audio.controls = true;
-  audio.style.width = '100%';
-  row.appendChild(audio);
-  wrap.appendChild(row);
+  audio.controls = false;
+  audio.playsInline = true;
+  audio.className = 'live-voice-hidden-audio';
+  audio.setAttribute('aria-hidden', 'true');
+  wrap.replaceChildren(audio);
+  const agent = document.getElementById('live-voice-agent');
+  if (agent) agent.textContent = participant?.identity || participant?.name || 'agent online';
+  setLiveVoiceHudState('speaking');
 }
 async function startLiveVoice() {
   if (S.liveVoiceConnected) { setLiveVoiceStatus('Live voice is already connected.', 'ok'); return; }
@@ -2359,6 +2442,7 @@ async function startLiveVoice() {
     room.on(LK.RoomEvent.Disconnected, () => {
       S.liveVoiceConnected = false;
       S.liveVoiceRoom = null;
+      document.getElementById('live-voice-audio')?.replaceChildren();
       document.getElementById('live-voice-btn')?.classList.remove('recording');
       setLiveVoiceBusy(false);
       setLiveVoiceStatus('Live voice disconnected.', 'warn');
@@ -2403,6 +2487,9 @@ async function stopLiveVoice(showToast = true) {
   } finally {
     S.liveVoiceSession = null;
     S.liveVoiceConnected = false;
+    document.getElementById('live-voice-audio')?.replaceChildren();
+    const agent = document.getElementById('live-voice-agent');
+    if (agent) agent.textContent = 'agent standby';
     document.getElementById('live-voice-btn')?.classList.remove('recording');
     setLiveVoiceBusy(false);
     setLiveVoiceStatus('Live voice stopped.', 'warn');
