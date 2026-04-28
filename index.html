@@ -204,6 +204,12 @@ select.input{cursor:pointer;appearance:none}
 .model-opt{padding:9px 12px;cursor:pointer;transition:.12s;display:flex;align-items:center;gap:8px;font-size:13px}
 .model-opt:hover{background:#111124}
 .model-opt.selected{background:#111124;color:#7c6ff7}
+.model-status-dot{width:8px;height:8px;border-radius:50%;background:#34d399;box-shadow:0 0 8px rgba(52,211,153,.55);flex-shrink:0}
+.model-status-dot.bad{background:#f87171;box-shadow:0 0 8px rgba(248,113,113,.55)}
+.model-status-dot.checking{background:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.42)}
+.model-retry-bar{display:none;align-items:center;justify-content:space-between;gap:10px;border:1px solid rgba(251,191,36,.35);border-radius:10px;background:rgba(67,20,7,.36);padding:8px 10px;color:#fbbf24;font-size:12px}
+.model-retry-bar span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.model-retry-bar button{border-radius:8px;padding:5px 9px;font-size:11px;flex-shrink:0}
 
 /* ── Token bar ── */
 .token-bar{display:flex;align-items:center;gap:10px;font-size:11px;color:#4a4a6a;font-family:'DM Mono',monospace;padding:2px 0;flex-wrap:wrap}
@@ -582,6 +588,7 @@ body.light .account-row .ar-meta{color:var(--muted)!important}
 body.light .account-row{color:var(--text)!important}
 body.light .account-row:hover{background:#eef1ff!important;color:var(--accent)!important}
 body.light .account-sep{background:var(--b)!important}
+body.light .model-retry-bar{background:#fff7ed!important;border-color:#fed7aa!important;color:#c2410c!important}
 body.light .input,
 body.light select.input,
 body.light textarea.input{background:#fff!important;border-color:var(--b)!important;color:var(--text)!important;box-shadow:0 1px 2px rgba(16,24,40,.03)}
@@ -968,6 +975,7 @@ const SIDEBAR_FEATURES = [
 ];
 const WORKSPACE_TOOL_FEATURE_KEYS = new Set(['documents','memory','connectors','mcp','livy','apikeys']);
 const SIDEBAR_FEATURE_BY_PAGE = Object.fromEntries(SIDEBAR_FEATURES.map(f => [f.page, f]));
+const DEFAULT_MODEL_ID = 'dolphin-mistral-24b-venice-hf';
 
 function localSidebarFeatureRow(f, isEnabled = true) {
   return { feature_key:f.key, page_key:f.page, display_name:f.label, icon:f.icon, is_enabled:isEnabled };
@@ -994,7 +1002,7 @@ const S = {
   user: null, token: null, refresh: null,
   page: 'chat', sessions: [], activeSession: null,
   messages: [], streaming: false, forceFreshChat: false,
-  modelId: 'llama-3.3-70b-versatile', useRag: true, useWeb: true, planMode: false, agentMode: false,
+  modelId: DEFAULT_MODEL_ID, useRag: true, useWeb: true, planMode: false, agentMode: false,
   notifications: [], notifCount: 0,
   models: [
     { id:'llama-3.3-70b-versatile', label:'Llama 3.3 70B', censored:true, tags:[] },
@@ -1015,6 +1023,7 @@ const S = {
   platformEnabled: null, // null means "unknown/unrestricted", Set<string> when loaded
   platformStatus: null,
   serviceHealth: null,
+  modelHealth: {}, modelHealthTimer: null, lastFailedChat: null,
   sidebarFeatures: null,
   enabledSidebarFeatures: null,
   skills: [], selectedSkillIds: [], mcpServers: [], selectedMcpTools: [], selectedConnectorIds: [],
@@ -1029,6 +1038,7 @@ function loadSaved() {
   S.token   = localStorage.getItem('jazz_token');
   S.refresh = localStorage.getItem('jazz_refresh');
   try { S.user = JSON.parse(localStorage.getItem('jazz_user') || 'null'); } catch(e) {}
+  S.modelId = localStorage.getItem('jazz_model_id') || DEFAULT_MODEL_ID;
   // Apply persisted theme (button state is refreshed after app chrome renders).
   const savedTheme = localStorage.getItem('jazz_theme');
   const theme = savedTheme === 'light' ? 'light' : 'dark';
@@ -1251,6 +1261,7 @@ async function doLogout() {
   if (S.refresh) await post('/auth/logout', { refresh_token: S.refresh }).catch(() => {});
   closeAccountMenu();
   closeFilesPanel();
+  if (S.modelHealthTimer) clearInterval(S.modelHealthTimer);
   S.token = null; S.refresh = null; S.user = null;
   ['jazz_token','jazz_refresh','jazz_user'].forEach(k => localStorage.removeItem(k));
   if (S.ws) S.ws.close();
@@ -1326,14 +1337,15 @@ function showApp() {
   loadUsage();
   connectWS();
   loadSidebarFeatureAccess();
-  loadModels().then(() => navigate('chat'));
+  loadModels({ preserveSelection:true }).then(() => { startModelHealthChecks(); navigate('chat'); });
   loadConnectedApps();
   renderThemeToggle();
   updateFilesBadge();
 }
 
-async function loadModels() {
+async function loadModels({ preserveSelection = true } = {}) {
   try {
+    const current = S.modelId;
     const d = await get('/model-info');
     const all = [];
     const inferCensored = m => {
@@ -1344,11 +1356,23 @@ async function loadModels() {
     (d.builtin_models || []).forEach(m => all.push({ id:m.id, label:m.label, ctx:m.ctx||32768, censored:inferCensored(m), tags:[m.provider, m.protected?'protected':''].filter(Boolean) }));
     (d.db_models || []).forEach(m => all.push({ id:m.id, label:m.name||m.id, ctx:m.context_length||m.ctx||4096, censored:inferCensored(m), tags:[m.provider, ...(m.tags||[])].filter(Boolean), cost_per_million_tokens:m.cost_per_million_tokens }));
     const seen = new Set();
-    const deduped = all.filter(m => !seen.has(m.id) && seen.add(m.id));
+    const deduped = all
+      .filter(m => !seen.has(m.id) && seen.add(m.id))
+      .sort((a,b) => (a.id === DEFAULT_MODEL_ID ? -1 : b.id === DEFAULT_MODEL_ID ? 1 : 0));
     if (deduped.length) {
       S.models = deduped;
       S.customModels = d.db_models || [];
-      if (!S.models.some(m => m.id === S.modelId)) S.modelId = S.models[0].id;
+      const hasCurrent = S.models.some(m => m.id === current);
+      const hasDefault = S.models.some(m => m.id === DEFAULT_MODEL_ID);
+      if (preserveSelection && hasCurrent) S.modelId = current;
+      else if (hasDefault) S.modelId = DEFAULT_MODEL_ID;
+      else if (!S.models.some(m => m.id === S.modelId)) S.modelId = S.models[0].id;
+      S.models.forEach(m => {
+        const h = S.modelHealth[m.id];
+        if (!h || h.status !== 'bad' || Date.now() - (h.ts || 0) > 10 * 60 * 1000) {
+          S.modelHealth[m.id] = { status:'ok', reason:'available', ts:Date.now() };
+        }
+      });
     }
   } catch(e) {}
 }
@@ -1563,6 +1587,8 @@ async function chat({ sessionId } = {}) {
         <!-- Slash palette -->
         <div id="slash-palette"></div>
 
+        <div id="model-retry-bar" class="model-retry-bar"></div>
+
         <div id="attach-tray" class="attach-tray"></div>
 
         <!-- Image preview -->
@@ -1684,12 +1710,70 @@ function insertSlash(cmd) {
 }
 
 // ── Model pill / dropdown ──
+function modelHealth(id) {
+  const h = S.modelHealth?.[id];
+  if (!h) return { status:'ok', reason:'available' };
+  if (h.status === 'bad' && Date.now() - (h.ts || 0) > 10 * 60 * 1000) return { status:'ok', reason:'recheck pending' };
+  return h;
+}
+function setModelHealth(id, status = 'ok', reason = '') {
+  if (!id) return;
+  S.modelHealth[id] = { status, reason: reason || (status === 'bad' ? 'failed' : 'available'), ts:Date.now() };
+  updateModelPill();
+  if (_dropOpen) rerenderModelDropdown();
+}
+function modelStatusDotHtml(id) {
+  const h = modelHealth(id);
+  const cls = h.status === 'bad' ? 'bad' : h.status === 'checking' ? 'checking' : '';
+  return `<span class="model-status-dot ${cls}" title="${escAttr(h.reason || h.status)}"></span>`;
+}
+function getNextWorkingModel(excludeId = S.modelId) {
+  const candidates = (S.models || []).filter(m => m.id !== excludeId);
+  return candidates.find(m => modelHealth(m.id).status !== 'bad') || candidates[0] || null;
+}
+function showModelRetryBar(reason = '') {
+  const bar = document.getElementById('model-retry-bar');
+  if (!bar) return;
+  const next = getNextWorkingModel();
+  if (!next) { bar.style.display = 'none'; return; }
+  bar.innerHTML = `<span>${escHtml(reason || 'Selected model did not respond.')}</span><button class="btn btn-ghost btn-xs" onclick="continueWithNextModel()">Continue with next working model</button>`;
+  bar.style.display = 'flex';
+}
+function hideModelRetryBar() {
+  const bar = document.getElementById('model-retry-bar');
+  if (bar) { bar.style.display = 'none'; bar.innerHTML = ''; }
+}
+function continueWithNextModel() {
+  const next = getNextWorkingModel();
+  if (!next) { toast('No alternate model is available right now', 'err'); return; }
+  S.modelId = next.id;
+  localStorage.setItem('jazz_model_id', next.id);
+  updateModelPill();
+  hideModelRetryBar();
+  const retry = S.lastFailedChat;
+  S.lastFailedChat = null;
+  toast(`Continuing with ${next.label}`, 'info');
+  if (retry?.msg) _executeChat(retry.msg, retry.attachments || []);
+}
+async function refreshModelHealthBackground() {
+  const before = new Set((S.models || []).map(m => m.id));
+  await loadModels({ preserveSelection:true });
+  const after = new Set((S.models || []).map(m => m.id));
+  before.forEach(id => { if (!after.has(id)) setModelHealth(id, 'bad', 'not returned by model list'); });
+  updateModelPill();
+}
+function startModelHealthChecks() {
+  if (S.modelHealthTimer) clearInterval(S.modelHealthTimer);
+  refreshModelHealthBackground();
+  S.modelHealthTimer = setInterval(refreshModelHealthBackground, 60000);
+}
 function updateModelPill() {
   const m = S.models.find(x => x.id === S.modelId) || S.models[0];
   if (!m) return;
   const dot = document.getElementById('model-dot');
   const lbl = document.getElementById('model-pill-label');
-  if (dot) dot.style.background = m.censored ? '#7c6ff7' : '#fb923c';
+  const h = modelHealth(m.id);
+  if (dot) dot.style.background = h.status === 'bad' ? '#f87171' : h.status === 'checking' ? '#fbbf24' : '#34d399';
   if (lbl) lbl.textContent = m.label;
 }
 let _dropOpen = false;
@@ -1706,17 +1790,24 @@ function toggleModelDropdown(e) {
   wrap.style.width = width + 'px';
   wrap.style.bottom = Math.max(12, window.innerHeight - rect.top + 8) + 'px';
   wrap.style.top = 'auto';
-  wrap.innerHTML = `<div class="model-dropdown" onclick="event.stopPropagation()">
+  wrap.innerHTML = renderModelDropdownHtml();
+  wrap.style.display = 'block'; _dropOpen = true;
+  setTimeout(() => document.addEventListener('click', _closeDrop), 0);
+}
+function renderModelDropdownHtml() {
+  return `<div class="model-dropdown" onclick="event.stopPropagation()">
     <div style="padding:8px 12px 4px;font-size:10px;color:#4a4a6a;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid #1a1a30;margin-bottom:4px">Select Model</div>
     ${S.models.map(m => `
       <div class="model-opt${m.id===S.modelId?' selected':''}" onclick="selectModel(${escAttr(JSON.stringify(String(m.id)))})">
-        <span class="model-dot" style="background:${m.censored?'#7c6ff7':'#fb923c'}"></span>
+        ${modelStatusDotHtml(m.id)}
         <span style="flex:1;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m.label)}</span>
         <span class="badge ${m.censored?'badge-free':'badge badge-warn'}" style="font-size:10px">${m.censored?'safe':'uncensored'}</span>
       </div>`).join('')}
   </div>`;
-  wrap.style.display = 'block'; _dropOpen = true;
-  setTimeout(() => document.addEventListener('click', _closeDrop), 0);
+}
+function rerenderModelDropdown() {
+  const wrap = document.getElementById('model-dropdown-wrap');
+  if (wrap && _dropOpen) wrap.innerHTML = renderModelDropdownHtml();
 }
 function _closeDrop() { closeModelDropdown(); }
 function closeModelDropdown() {
@@ -1725,7 +1816,14 @@ function closeModelDropdown() {
   _dropOpen = false;
   document.removeEventListener('click', _closeDrop);
 }
-function selectModel(id) { S.modelId = id; updateModelPill(); closeModelDropdown(); loadContextStatus(); }
+function selectModel(id) {
+  S.modelId = id;
+  localStorage.setItem('jazz_model_id', id);
+  hideModelRetryBar();
+  updateModelPill();
+  closeModelDropdown();
+  loadContextStatus();
+}
 
 // ── Token bar ──
 // Cost-per-million-tokens estimates (input, output) in USD
@@ -2547,6 +2645,11 @@ async function _sendChatInternal(msg, attachments = []) {
   if (empty) msgsEl.innerHTML = '';
 
   const localAttachments = attachments || [];
+  const requestedModelId = S.modelId;
+  let activeModelId = requestedModelId;
+  let requestCompleted = false;
+  hideModelRetryBar();
+  setModelHealth(requestedModelId, 'checking', 'checking response');
   const attachHtml = renderAttachmentCards(localAttachments, false);
   msgsEl.insertAdjacentHTML('beforeend', `<div style="display:flex;justify-content:flex-end" class="fade-in">${renderUserContent(msg, attachHtml)}</div>`);
 
@@ -2572,15 +2675,26 @@ async function _sendChatInternal(msg, attachments = []) {
   let suppressLiveAssistant = isToolSlashMessage(msg);
 
   function _onDone(d) {
+    requestCompleted = true;
     S.streaming = false;
     document.getElementById('typing-ind').style.display = 'none';
     if (d?.model_id) {
+      activeModelId = d.model_id;
       S.modelId = d.model_id;
       updateModelPill();
       loadContextStatus();
     }
     if (!full.trim() && d?.content) full = String(d.content);
-    if (!full.trim()) full = 'I did not receive text from the selected model on that attempt. I will automatically try another model on the next send.';
+    const noModelText = !full.trim();
+    if (noModelText) {
+      setModelHealth(activeModelId, 'bad', 'no text returned');
+      S.lastFailedChat = { msg, attachments: localAttachments };
+      showModelRetryBar('No response from this model.');
+      full = 'I did not receive text from the selected model on that attempt.';
+    } else {
+      setModelHealth(activeModelId, 'ok', 'responded');
+      S.lastFailedChat = null;
+    }
     // Compute a human-readable copy text: for tool payloads, summarise instead of raw JSON
     const _tp = tryParseToolPayload(full);
     if (_tp) {
@@ -2634,7 +2748,9 @@ async function _sendChatInternal(msg, attachments = []) {
       suppressLiveAssistant = true;
     }
     if (d.type === 'model_switch' && d.selected && d.model_id) {
+      activeModelId = d.model_id;
       S.modelId = d.model_id;
+      setModelHealth(d.model_id, 'checking', 'router selected this model');
       updateModelPill();
       loadContextStatus();
     }
@@ -2647,13 +2763,17 @@ async function _sendChatInternal(msg, attachments = []) {
     scrollBottom();
   }
   function _onError(errMsg) {
+    requestCompleted = true;
     S.streaming = false;
     document.getElementById('typing-ind').style.display = 'none';
-    const msg = errText(errMsg);
+    const err = errText(errMsg);
+    setModelHealth(activeModelId, 'bad', err || 'stream error');
+    S.lastFailedChat = { msg, attachments: localAttachments };
+    showModelRetryBar('This model failed. Try the next working model.');
     const bubble = document.querySelector(`#${aiId} .msg-ai`);
     if (bubble) bubble.style.display = '';
-    if (bubble) { bubble.classList.remove('cursor-blink'); bubble.innerHTML = `<span style="color:#f87171">⚠️ ${escHtml(msg)}</span>`; }
-    toast(msg || 'Stream error', 'err');
+    if (bubble) { bubble.classList.remove('cursor-blink'); bubble.innerHTML = `<span style="color:#f87171">! ${escHtml(err)}</span>`; }
+    toast(err || 'Stream error', 'err');
     renderQueuePanel(); _tryRunNextQueued();
   }
 
@@ -2668,7 +2788,7 @@ async function _sendChatInternal(msg, attachments = []) {
       const timeout = setTimeout(() => { if (!started) { es.close(); resolve(false); } }, 6000);
       es.onmessage = e => {
         let d; try { d = JSON.parse(e.data); } catch { return; }
-        if (d.type === 'start') { clearTimeout(timeout); started = true; if (d.model_id) { S.modelId = d.model_id; updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; loadContextStatus(); } resolve(true); }
+        if (d.type === 'start') { clearTimeout(timeout); started = true; if (d.model_id) { activeModelId = d.model_id; S.modelId = d.model_id; setModelHealth(d.model_id, 'checking', 'stream started'); updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; loadContextStatus(); } resolve(true); }
         if (d.type === 'thinking_content') _onThinking(d.content);
         if (['tool_start','tool_progress','tool_result','tool_error','skill_loaded','model_switch'].includes(d.type)) _onToolEvent(d);
         if (d.type === 'delta') _onDelta(d.content);
@@ -2693,7 +2813,7 @@ async function _sendChatInternal(msg, attachments = []) {
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           let d; try { d = JSON.parse(line.slice(6)); } catch { continue; }
-          if (d.type === 'start') { if (d.model_id) { S.modelId = d.model_id; updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; loadContextStatus(); } }
+          if (d.type === 'start') { if (d.model_id) { activeModelId = d.model_id; S.modelId = d.model_id; setModelHealth(d.model_id, 'checking', 'stream started'); updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; loadContextStatus(); } }
           if (d.type === 'thinking_content') _onThinking(d.content);
           if (['tool_start','tool_progress','tool_result','tool_error','skill_loaded','model_switch'].includes(d.type)) _onToolEvent(d);
           if (d.type === 'delta') _onDelta(d.content);
@@ -2701,6 +2821,7 @@ async function _sendChatInternal(msg, attachments = []) {
           if (d.type === 'error') _onError(d.message);
         }
       }
+      if (!requestCompleted) _onError('Stream ended without a response');
     } catch(err) { _onError(err.message); }
   }
 
