@@ -407,17 +407,11 @@ select.input{cursor:pointer;appearance:none}
       <nav style="padding:10px 8px;flex-shrink:0">
         <button class="nav-item sidebar-new-chat" type="button" onclick="newSession()"><span class="icon">+</span>New Chat</button>
         <a class="nav-item" data-page="chat"        onclick="navigate('chat')">       <span class="icon">💬</span>Chat</a>
-        <a class="nav-item" data-page="documents"   data-feature-key="documents" onclick="navigate('documents')">  <span class="icon">&#128196;</span>Documents</a>
-        <a class="nav-item" data-page="memory"      data-feature-key="memory" onclick="navigate('memory')">     <span class="icon">&#128161;</span>Memory</a>
-        <a class="nav-item" data-page="connectors"  data-feature-key="connectors" onclick="navigate('connectors')"> <span class="icon">&#128279;</span>Connectors</a>
-        <a class="nav-item" data-page="mcp"         data-feature-key="mcp" onclick="navigate('mcp')">        <span class="icon">&#9881;</span>MCP Servers</a>
         <a class="nav-item" data-page="agents"      data-feature-key="agents" onclick="navigate('agents')">     <span class="icon">🤖</span>Agent Jobs</a>
         <a class="nav-item" data-page="playground"  data-feature-key="playground" onclick="navigate('playground')"> <span class="icon">⚡</span>Playground</a>
         <a class="nav-item" data-page="multimodel"  data-feature-key="multimodel" onclick="navigate('multimodel')"> <span class="icon">MM</span>Multi-Model</a>
         <a class="nav-item" data-page="websites"    data-feature-key="websites" onclick="navigate('websites')">   <span class="icon">🌐</span>Website Builder</a>
         <a class="nav-item" data-page="code"        data-feature-key="code" onclick="navigate('code')">       <span class="icon">💻</span>Code Runner</a>
-        <a class="nav-item" data-page="livy"        data-feature-key="livy" onclick="navigate('livy')">       <span class="icon">&#128293;</span>Spark</a>
-        <a class="nav-item" data-page="apikeys"     data-feature-key="apikeys" onclick="navigate('apikeys')">    <span class="icon">&#128273;</span>API Keys</a>
         <a class="nav-item" data-page="settings"    onclick="navigate('settings')">   <span class="icon">&#128100;</span>Settings</a>
         <a id="admin-link" class="nav-item" data-page="admin" onclick="navigate('admin')" style="display:none"><span class="icon">👑</span>Admin</a>
       </nav>
@@ -663,31 +657,27 @@ const SLASH_COMMANDS = [
 ];
 
 const SIDEBAR_FEATURES = [
-  { key:'documents',  page:'documents',  label:'Documents',       icon:'DOC' },
-  { key:'memory',     page:'memory',     label:'Memory',          icon:'MEM' },
-  { key:'connectors', page:'connectors', label:'Connectors',      icon:'CON' },
-  { key:'mcp',        page:'mcp',        label:'MCP Servers',     icon:'MCP' },
   { key:'agents',     page:'agents',     label:'Agent Jobs',      icon:'🤖' },
   { key:'playground', page:'playground', label:'Playground',      icon:'⚡' },
   { key:'multimodel', page:'multimodel', label:'Multi-Model',     icon:'MM' },
   { key:'websites',   page:'websites',   label:'Website Builder', icon:'🌐' },
   { key:'code',       page:'code',       label:'Code Runner',     icon:'💻' },
-  { key:'livy',       page:'livy',       label:'Spark',           icon:'SPK' },
-  { key:'apikeys',    page:'apikeys',    label:'API Keys',        icon:'API' },
 ];
+const WORKSPACE_TOOL_FEATURE_KEYS = new Set(['documents','memory','connectors','mcp','livy','apikeys']);
 const SIDEBAR_FEATURE_BY_PAGE = Object.fromEntries(SIDEBAR_FEATURES.map(f => [f.page, f]));
 
 function localSidebarFeatureRow(f, isEnabled = true) {
   return { feature_key:f.key, page_key:f.page, display_name:f.label, icon:f.icon, is_enabled:isEnabled };
 }
 function mergeLocalSidebarFeatures(rows = []) {
-  const byKey = new Map((rows || []).map(r => [String(r.feature_key || r.key || ''), r]));
+  const sidebarRows = (rows || []).filter(r => !WORKSPACE_TOOL_FEATURE_KEYS.has(String(r.feature_key || r.key || '')));
+  const byKey = new Map(sidebarRows.map(r => [String(r.feature_key || r.key || ''), r]));
   const localKeys = new Set(SIDEBAR_FEATURES.map(f => f.key));
   const merged = SIDEBAR_FEATURES.map(f => {
     const row = byKey.get(f.key);
     return row ? { ...localSidebarFeatureRow(f, row.is_enabled !== false), ...row, feature_key:row.feature_key || f.key, page_key:row.page_key || f.page } : localSidebarFeatureRow(f, true);
   });
-  (rows || []).forEach(r => {
+  sidebarRows.forEach(r => {
     const key = String(r.feature_key || r.key || '');
     if (key && !localKeys.has(key)) merged.push(r);
   });
