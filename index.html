@@ -976,6 +976,7 @@ const SIDEBAR_FEATURES = [
 const WORKSPACE_TOOL_FEATURE_KEYS = new Set(['documents','memory','connectors','mcp','livy','apikeys']);
 const SIDEBAR_FEATURE_BY_PAGE = Object.fromEntries(SIDEBAR_FEATURES.map(f => [f.page, f]));
 const DEFAULT_MODEL_ID = 'dolphin-mistral-24b-venice-hf';
+const MODEL_DEFAULT_VERSION = 'dolphin-venice-hf-token-20260428';
 
 function localSidebarFeatureRow(f, isEnabled = true) {
   return { feature_key:f.key, page_key:f.page, display_name:f.label, icon:f.icon, is_enabled:isEnabled };
@@ -1364,7 +1365,12 @@ async function loadModels({ preserveSelection = true } = {}) {
       S.customModels = d.db_models || [];
       const hasCurrent = S.models.some(m => m.id === current);
       const hasDefault = S.models.some(m => m.id === DEFAULT_MODEL_ID);
-      if (preserveSelection && hasCurrent) S.modelId = current;
+      const defaultVersion = localStorage.getItem('jazz_default_model_version');
+      if (hasDefault && defaultVersion !== MODEL_DEFAULT_VERSION) {
+        S.modelId = DEFAULT_MODEL_ID;
+        localStorage.setItem('jazz_default_model_version', MODEL_DEFAULT_VERSION);
+      }
+      else if (preserveSelection && hasCurrent) S.modelId = current;
       else if (hasDefault) S.modelId = DEFAULT_MODEL_ID;
       else if (!S.models.some(m => m.id === S.modelId)) S.modelId = S.models[0].id;
       if (S.modelId && S.modelId !== current) localStorage.setItem('jazz_model_id', S.modelId);
