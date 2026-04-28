@@ -971,6 +971,11 @@ async function loadSidebarFeatureAccess() {
     S.enabledSidebarFeatures = new Set(defaultSidebarFeatureKeys());
   }
   applySidebarFeatureAccess();
+  if (S.page && S.page !== 'chat' && !canNavigatePage(S.page)) {
+    const feature = SIDEBAR_FEATURE_BY_PAGE[S.page];
+    toast(`${feature?.label || S.page} is disabled by admin`, 'warn');
+    navigate('chat');
+  }
 }
 function applySidebarFeatureAccess() {
   document.querySelectorAll('[data-feature-key]').forEach(el => {
@@ -4539,7 +4544,9 @@ async function adminToggleSidebarFeature(featureKey, isEnabled) {
     await loadSidebarFeatureAccess();
     if (S.page === 'admin') adminTab('sidebar-features', null);
   } catch(e) {
-    toast(e.message, 'err');
+    const msg = e?.message || 'Unknown backend error';
+    toast(`Sidebar update failed for ${featureKey}: ${msg}`, 'err');
+    await loadSidebarFeatureAccess().catch(() => {});
     if (S.page === 'admin') adminTab('sidebar-features', null);
   }
 }
@@ -4549,7 +4556,12 @@ async function adminBulkSidebarFeatures(isEnabled) {
     toast(isEnabled ? 'Sidebar features enabled' : 'Sidebar features disabled', 'ok');
     await loadSidebarFeatureAccess();
     adminTab('sidebar-features', null);
-  } catch(e) { toast(e.message, 'err'); }
+  } catch(e) {
+    const msg = e?.message || 'Unknown backend error';
+    toast(`Sidebar bulk update failed: ${msg}`, 'err');
+    await loadSidebarFeatureAccess().catch(() => {});
+    if (S.page === 'admin') adminTab('sidebar-features', null);
+  }
 }
 function userFeatureModeClass(active) {
   return active ? 'btn-primary' : 'btn-ghost';
