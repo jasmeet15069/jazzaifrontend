@@ -710,6 +710,7 @@ const S = {
   connectedApps: {}, // connector_id -> row from smart_connectors
   platformEnabled: null, // null means "unknown/unrestricted", Set<string> when loaded
   platformStatus: null,
+  serviceHealth: null,
   sidebarFeatures: null,
   enabledSidebarFeatures: null,
   skills: [], selectedSkillIds: [], mcpServers: [], selectedMcpTools: [], selectedConnectorIds: [],
@@ -965,6 +966,15 @@ async function loadSidebarFeatureAccess() {
     toast(`${feature?.label || S.page} is disabled by admin`, 'warn');
     navigate('chat');
   }
+}
+async function loadServiceHealth(force = false) {
+  if (S.serviceHealth && !force) return S.serviceHealth;
+  try {
+    S.serviceHealth = await get('/health');
+  } catch(e) {
+    S.serviceHealth = {};
+  }
+  return S.serviceHealth;
 }
 function applySidebarFeatureAccess() {
   document.querySelectorAll('[data-feature-key]').forEach(el => {
@@ -3295,6 +3305,20 @@ async function runCode() {
 // ── LIVY / SPARK ──
 // ═══════════════════════════════════════════════
 async function livy() {
+  await loadServiceHealth(true);
+  const livyReady = S.serviceHealth?.services?.livy === true;
+  if (!livyReady) {
+    document.getElementById('main-content').innerHTML = `
+  <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
+    <div class="workspace-header" style="justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:10px"><button class="btn btn-ghost btn-sm" onclick="navigate('settings');setTimeout(()=>settingsTab('workspace',document.querySelectorAll('#main-content .tab')[1]),0)">‹</button><span class="page-icon">🔥</span><div class="page-title">Apache Spark (Livy)</div></div>
+    </div>
+    <div style="padding:30px;flex:1;overflow:auto">
+      <div class="card" style="font-size:13px;color:#fca5a5;border-color:#7f1d1d;max-width:720px">Spark / Livy is unavailable.</div>
+    </div>
+  </div>`;
+    return;
+  }
   document.getElementById('main-content').innerHTML = `
   <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
     <div class="workspace-header" style="justify-content:space-between">
@@ -3480,6 +3504,32 @@ async function settings() {
   </div>`;
   settingsTab('profile', document.querySelector('#main-content .tab'));
 }
+const WORKSPACE_TOOL_CARDS = [
+  ['connectors','&#128279;','Connectors','Connect Gmail, Drive, Slack, GitHub, and other apps.'],
+  ['documents','&#128193;','Documents','Upload files and manage RAG knowledge sources.'],
+  ['memory','&#129504;','Memory','Review what JAZZ remembers and remove stale facts.'],
+  ['mcp','&#9881;&#65039;','MCP Servers','Add MCP servers, browse tools, and test capabilities.'],
+  ['apikeys','&#128273;','API Keys','Create and revoke API keys for integrations.'],
+  ['livy','&#128293;','Spark / Livy','Configure Spark sessions and run Livy jobs.'],
+];
+function renderWorkspaceToolCards() {
+  const livyReady = S.serviceHealth?.services?.livy === true;
+  return WORKSPACE_TOOL_CARDS
+    .filter(([page]) => page !== 'livy' || livyReady)
+    .map(([page,icon,title,desc]) => `<button class="card" type="button" onclick="navigate('${page}')" style="text-align:left;cursor:pointer;display:flex;gap:12px;align-items:flex-start;border-radius:8px">
+        <span style="font-size:20px;line-height:1">${icon}</span>
+        <span style="display:grid;gap:4px">
+          <span style="font-size:14px;font-weight:700;color:#e4e4f4">${title}</span>
+          <span style="font-size:12px;line-height:1.45;color:#9090b0">${desc}</span>
+        </span>
+      </button>`)
+    .join('');
+}
+async function refreshWorkspaceTools() {
+  await loadServiceHealth();
+  const grid = document.getElementById('workspace-tools-grid');
+  if (grid) grid.innerHTML = renderWorkspaceToolCards();
+}
 function settingsTab(tab, el) {
   document.querySelectorAll('#main-content .tab').forEach(t => t.classList.remove('active'));
   if (el) el.classList.add('active');
@@ -3495,7 +3545,7 @@ function settingsTab(tab, el) {
       </div>
       <button class="btn btn-primary" onclick="saveProfile()" style="justify-content:center">Save Changes</button>
     </div>`,
-    workspace: `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;max-width:980px">
+    workspace: `<div id="workspace-tools-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;max-width:980px">
       ${[
         ['connectors','🔌','Connectors','Connect Gmail, Drive, Slack, GitHub, and other apps.'],
         ['documents','📁','Documents','Upload files and manage RAG knowledge sources.'],
@@ -3503,7 +3553,7 @@ function settingsTab(tab, el) {
         ['mcp','⚙️','MCP Servers','Add MCP servers, browse tools, and test capabilities.'],
         ['apikeys','🔑','API Keys','Create and revoke API keys for integrations.'],
         ['livy','🔥','Spark / Livy','Configure Spark sessions and run Livy jobs.'],
-      ].map(([page,icon,title,desc]) => `<button class="card" type="button" onclick="navigate('${page}')" style="text-align:left;cursor:pointer;display:flex;gap:12px;align-items:flex-start;border-radius:8px">
+      ].filter(([page]) => page !== 'livy' || S.serviceHealth?.services?.livy === true).map(([page,icon,title,desc]) => `<button class="card" type="button" onclick="navigate('${page}')" style="text-align:left;cursor:pointer;display:flex;gap:12px;align-items:flex-start;border-radius:8px">
         <span style="font-size:20px;line-height:1">${icon}</span>
         <span style="display:grid;gap:4px">
           <span style="font-size:14px;font-weight:700;color:#e4e4f4">${title}</span>
@@ -3538,6 +3588,7 @@ function settingsTab(tab, el) {
     </div>`,
   };
   document.getElementById('settings-body').innerHTML = bodies[tab] || '';
+  if (tab === 'workspace') refreshWorkspaceTools();
   if (tab === 'usage') loadSettingsUsage();
 }
 async function loadSettingsUsage() {
