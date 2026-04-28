@@ -1367,6 +1367,7 @@ async function loadModels({ preserveSelection = true } = {}) {
       if (preserveSelection && hasCurrent) S.modelId = current;
       else if (hasDefault) S.modelId = DEFAULT_MODEL_ID;
       else if (!S.models.some(m => m.id === S.modelId)) S.modelId = S.models[0].id;
+      if (S.modelId && S.modelId !== current) localStorage.setItem('jazz_model_id', S.modelId);
       S.models.forEach(m => {
         const h = S.modelHealth[m.id];
         if (!h || h.status !== 'bad' || Date.now() - (h.ts || 0) > 10 * 60 * 1000) {
