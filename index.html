@@ -313,6 +313,23 @@ select.input{cursor:pointer;appearance:none}
 #img-preview-bar{display:none;padding:6px 0 2px;position:relative}
 #img-preview-bar img{height:56px;width:56px;object-fit:cover;border-radius:8px;border:1px solid #1a1a30}
 .remove-img{position:absolute;top:2px;left:44px;width:18px;height:18px;border-radius:50%;background:#f87171;border:none;color:#fff;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700}
+.attach-tray{display:none;gap:8px;flex-wrap:wrap;padding:2px 0 4px}
+.attach-list{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.attach-card{position:relative;display:grid;grid-template-columns:42px minmax(0,1fr);gap:8px;align-items:center;max-width:min(260px,100%);min-width:190px;padding:8px 28px 8px 8px;border:1px solid rgba(124,111,247,.28);border-radius:10px;background:linear-gradient(135deg,rgba(124,111,247,.08),rgba(96,165,250,.04));box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}
+.attach-card:hover{border-color:#7c6ff7;background:linear-gradient(135deg,rgba(124,111,247,.14),rgba(45,212,191,.06))}
+.attach-card.error{border-color:#7f1d1d;background:rgba(127,29,29,.18)}
+.attach-thumb,.attach-icon{width:42px;height:42px;border-radius:8px;border:1px solid #252540;background:#080812;display:flex;align-items:center;justify-content:center;object-fit:cover;overflow:hidden;flex-shrink:0}
+.attach-icon{font-family:'DM Mono',monospace;font-size:10px;color:#7c6ff7;font-weight:800;text-transform:uppercase}
+.attach-meta{min-width:0}
+.attach-name{font-size:12px;font-weight:700;color:#e4e4f4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.attach-sub{font-size:10px;color:#9090b0;font-family:'DM Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.attach-remove{position:absolute;right:6px;top:6px;width:18px;height:18px;border-radius:50%;border:1px solid #252540;background:#0c0c1a;color:#9090b0;cursor:pointer;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center}
+.attach-remove:hover{border-color:#f87171;color:#f87171}
+.attach-hint{display:inline-flex;align-items:center;gap:6px;color:#60a5fa;font-size:11px;font-family:'DM Mono',monospace}
+.composer-drag{border-color:#7c6ff7!important;box-shadow:0 0 0 1px rgba(124,111,247,.45),0 0 28px rgba(124,111,247,.18)}
+.msg-attachments{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;justify-content:flex-end}
+.msg-attachments .attach-card{min-width:170px;max-width:220px;padding:7px 8px;grid-template-columns:34px minmax(0,1fr)}
+.msg-attachments .attach-thumb,.msg-attachments .attach-icon{width:34px;height:34px;border-radius:7px}
 
 /* ── WS status ── */
 #ws-indicator{width:7px;height:7px;border-radius:50%;background:#4a4a6a;flex-shrink:0;transition:background .3s}
@@ -395,6 +412,19 @@ select.input{cursor:pointer;appearance:none}
 .tool-event.error{background:#1f0a0a;border-color:#7f1d1d;color:#fca5a5}
 .tool-event.skill{background:#15102a;border-color:#4c3c94;color:#c4b5fd}
 .tools-summary{display:inline-flex;align-items:center;gap:6px}
+.tool-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+.tool-card{position:relative;width:100%;text-align:left;border:1px solid #1a1a30;border-radius:10px;background:linear-gradient(135deg,#080812,#0d0d20);color:#9090b0;padding:10px;display:grid;gap:7px;cursor:pointer;transition:.18s;overflow:hidden}
+.tool-card::before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,transparent,rgba(124,111,247,.12),transparent);opacity:0;transform:translateX(-40%);transition:.25s;pointer-events:none}
+.tool-card:hover{border-color:#3730a3;color:#e4e4f4;transform:translateY(-1px)}
+.tool-card:hover::before{opacity:1;transform:translateX(40%)}
+.tool-card.active{border-color:#7c6ff7;color:#e4e4f4;background:linear-gradient(135deg,rgba(124,111,247,.18),rgba(45,212,191,.05));box-shadow:0 0 0 1px rgba(124,111,247,.15),0 10px 30px rgba(0,0,0,.18)}
+.tool-card .tool-row{display:flex;align-items:center;gap:8px;min-width:0}
+.tool-card .tool-icon{width:28px;height:28px;border-radius:8px;border:1px solid #252540;background:#0c0c1a;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.tool-card .tool-title{font-weight:800;font-size:13px;color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tool-card .tool-desc{font-size:11px;color:#4a4a6a;line-height:1.35}
+.tool-card.active .tool-desc{color:#a6b1d4}
+.tool-card .tool-state{position:absolute;right:8px;top:8px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.08em;color:#4a4a6a}
+.tool-card.active .tool-state{color:#34d399}
 .chat-header .chat-toggle{display:none!important}
 
 /* ── Workspace header ── */
@@ -462,6 +492,21 @@ body.light .page-back-btn{background:var(--s)!important;border-color:var(--b)!im
 body.light .btn-ghost:hover,
 body.light .voice-btn:hover,
 body.light .page-back-btn:hover{background:#eef1ff!important;border-color:var(--accent)!important;color:var(--accent)!important}
+body.light .attach-card,
+body.light .tool-card{background:linear-gradient(135deg,#fff,#f6f8ff)!important;border-color:var(--b)!important;color:var(--text)!important;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+body.light .attach-card:hover,
+body.light .tool-card:hover,
+body.light .tool-card.active{border-color:var(--accent)!important;background:linear-gradient(135deg,#eef1ff,#f7fbff)!important}
+body.light .attach-thumb,
+body.light .attach-icon,
+body.light .attach-remove,
+body.light .tool-card .tool-icon{background:var(--s2)!important;border-color:var(--b)!important}
+body.light .attach-name,
+body.light .tool-card .tool-title{color:var(--text)!important}
+body.light .attach-sub,
+body.light .tool-card .tool-desc,
+body.light .tool-card .tool-state{color:var(--muted)!important}
+body.light .tool-card.active .tool-state{color:#047857!important}
 body.light .input,
 body.light select.input,
 body.light textarea.input{background:#fff!important;border-color:var(--b)!important;color:var(--text)!important;box-shadow:0 1px 2px rgba(16,24,40,.03)}
@@ -872,7 +917,7 @@ const S = {
   user: null, token: null, refresh: null,
   page: 'chat', sessions: [], activeSession: null,
   messages: [], streaming: false, forceFreshChat: false,
-  modelId: 'llama-3.3-70b-versatile', useRag: true, useWeb: false, planMode: false, agentMode: false,
+  modelId: 'llama-3.3-70b-versatile', useRag: true, useWeb: true, planMode: false, agentMode: false,
   notifications: [], notifCount: 0,
   models: [
     { id:'llama-3.3-70b-versatile', label:'Llama 3.3 70B', censored:true, tags:[] },
@@ -883,7 +928,7 @@ const S = {
   ws: null, wsRetry: 0,
   recording: false, mediaRec: null, audioChunks: [], voiceMode: false,
   liveVoiceRoom: null, liveVoiceTrack: null, liveVoiceSession: null, liveVoiceConnected: false,
-  usage: null, pendingImage: null,
+  usage: null, pendingImage: null, pendingAttachments: [],
   chatQueue: [], queueRunning: false,
   chatSearchOpen: false, chatSearchQuery: '', chatSearchResults: [], chatSearchTimer: null, chatSearchLoading: false,
   lastTokens: { input:0, output:0, total:0 },
@@ -922,6 +967,15 @@ function loadSaved() {
     if (Array.isArray(prefs.selectedConnectorIds)) S.selectedConnectorIds = prefs.selectedConnectorIds;
     if (Array.isArray(prefs.selectedSkillIds)) S.selectedSkillIds = prefs.selectedSkillIds;
     if (Array.isArray(prefs.selectedMcpTools)) S.selectedMcpTools = prefs.selectedMcpTools;
+  } catch(e) {}
+  try {
+    if (!localStorage.getItem('jazz_web_default_active_v1')) {
+      S.useWeb = true;
+      const prefs2 = JSON.parse(localStorage.getItem('jazz_tool_prefs') || '{}');
+      prefs2.useWeb = true;
+      localStorage.setItem('jazz_tool_prefs', JSON.stringify(prefs2));
+      localStorage.setItem('jazz_web_default_active_v1', '1');
+    }
   } catch(e) {}
 }
 function saveToolPrefs() {
@@ -1417,9 +1471,11 @@ async function chat({ sessionId } = {}) {
 
     <!-- Input area -->
     <div class="chat-composer-wrap" style="padding:10px 14px;padding-bottom:max(14px,env(safe-area-inset-bottom));flex-shrink:0">
-      <div style="background:#0c0c1a;border:1px solid #1a1a30;border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;position:relative" id="composer-box">
+      <div style="background:#0c0c1a;border:1px solid #1a1a30;border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;position:relative" id="composer-box" ondragover="dragComposerFiles(event)" ondragleave="leaveComposerFiles(event)" ondrop="dropComposerFiles(event)">
         <!-- Slash palette -->
         <div id="slash-palette"></div>
+
+        <div id="attach-tray" class="attach-tray"></div>
 
         <!-- Image preview -->
         <div id="img-preview-bar">
@@ -1445,9 +1501,9 @@ async function chat({ sessionId } = {}) {
 
         <div class="composer-actions" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <div class="composer-tools" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-            <!-- Attach image -->
-            <label class="voice-btn" title="Attach image" style="cursor:pointer">
-              <input type="file" accept="image/*" style="display:none" onchange="attachImage(this)">📎
+            <!-- Attach files -->
+            <label class="voice-btn" title="Attach files" style="cursor:pointer">
+              <input type="file" multiple style="display:none" onchange="attachFiles(this)">📎
             </label>
             <!-- Voice -->
             <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" title="Voice input">🎙</button>
@@ -1868,7 +1924,7 @@ function renderMessages(msgs, summaries = []) {
     el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#4a4a6a;text-align:center;padding:20px;gap:12px">
       <div style="font-size:56px;opacity:.3">✦</div>
       <div style="font-family:'Syne',sans-serif;font-size:22px;font-weight:700;color:#9090b0">How can JAZZ help?</div>
-      <div style="font-size:13px;max-width:360px;line-height:1.6">Type a message below, use <span style="color:#7c6ff7;font-family:'DM Mono',monospace">/command</span> for connected apps, or attach an image.</div>
+      <div style="font-size:13px;max-width:390px;line-height:1.6">Type a message below, use <span style="color:#7c6ff7;font-family:'DM Mono',monospace">/command</span> for connected apps, or attach files.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:4px">
         ${[['Analyze this data','📊'],['Draft an email','📧'],['Explain this code','💻'],['Search my docs','🔍']].map(([t,i])=>`<button class="btn btn-ghost btn-sm" onclick="fillInput('${t}')">${i} ${t}</button>`).join('')}
       </div>
@@ -1935,23 +1991,52 @@ async function loadMcpServersPublic() {
 function _mcpToolsFromServer(s) {
   try { return JSON.parse(s.tools_json || '[]'); } catch(e) { return []; }
 }
+function toolCardHtml({ id = '', title = '', desc = '', icon = '', active = false, cls = '', attrs = '' } = {}) {
+  const keyAttr = id ? `data-tool-toggle="${escAttr(id)}"` : '';
+  const iconHtml = String(icon || '').includes('<') ? icon : `<span>${escHtml(icon || 'TOOL')}</span>`;
+  return `<button type="button" class="tool-card ${active?'active':''} ${escAttr(cls)}" ${keyAttr} ${attrs} aria-pressed="${active?'true':'false'}" onclick="toggleToolElement(this)">
+    <span class="tool-state">${active?'ON':'OFF'}</span>
+    <span class="tool-row"><span class="tool-icon">${iconHtml}</span><span class="tool-title">${escHtml(title)}</span></span>
+    <span class="tool-desc">${escHtml(desc)}</span>
+  </button>`;
+}
+function toggleToolElement(el) {
+  if (!el) return;
+  el.classList.toggle('active');
+  const active = el.classList.contains('active');
+  el.setAttribute('aria-pressed', active ? 'true' : 'false');
+  const state = el.querySelector('.tool-state');
+  if (state) state.textContent = active ? 'ON' : 'OFF';
+}
+function isToolCardActive(id) {
+  return [...document.querySelectorAll('[data-tool-toggle]')].some(el => el.dataset.toolToggle === id && el.classList.contains('active'));
+}
 async function openToolsDrawer() {
   await Promise.all([loadConnectedApps(), loadSkills(), loadMcpServersPublic()]);
   const apps = Object.values(S.connectedApps || {});
-  const skillRows = (S.skills || []).map(sk => `
-    <label style="display:flex;gap:8px;align-items:flex-start;padding:9px;border:1px solid #1a1a30;border-radius:8px;background:#080812;cursor:pointer">
-      <input type="checkbox" class="tool-skill" value="${escAttr(sk.id)}" ${S.selectedSkillIds.includes(sk.id)?'checked':''} style="accent-color:#7c6ff7;margin-top:2px">
-      <span><b style="font-size:13px">${escHtml(sk.name)}</b><span style="display:block;font-size:11px;color:#9090b0">${escHtml(sk.description||'Reusable instruction package')}</span></span>
-    </label>`).join('') || '<div style="color:#4a4a6a;font-size:12px">No enabled skills yet.</div>';
+  const skillRows = (S.skills || []).map(sk => toolCardHtml({
+    title: sk.name,
+    desc: sk.description || 'Reusable instruction package',
+    icon: 'SK',
+    active: S.selectedSkillIds.includes(sk.id),
+    cls: 'tool-skill',
+    attrs: `data-tool-skill="${escAttr(sk.id)}"`
+  })).join('') || '<div style="color:#4a4a6a;font-size:12px">No enabled skills yet.</div>';
   const mcpRows = (S.mcpServers || []).map(s => {
     const tools = _mcpToolsFromServer(s).slice(0,6);
-    return `<div style="border:1px solid #1a1a30;border-radius:8px;padding:10px;background:#080812">
+    return `<div style="border:1px solid #1a1a30;border-radius:10px;padding:10px;background:#080812;display:grid;gap:6px">
       <div style="font-weight:700;font-size:13px;margin-bottom:6px">${escHtml(s.name)}</div>
       ${tools.map(t => {
         const name = t.name || t.tool_name || '';
-        const key = `${s.id}:${name}`;
         const checked = (S.selectedMcpTools||[]).some(x => x.server_id===s.id && (x.name||x.tool_name)===name);
-        return `<label style="display:flex;gap:7px;align-items:center;font-size:12px;color:#9090b0;margin:4px 0"><input type="checkbox" class="tool-mcp" data-server="${escAttr(s.id)}" data-server-name="${escAttr(s.name)}" value="${escAttr(name)}" ${checked?'checked':''} style="accent-color:#7c6ff7">${escHtml(name)}</label>`;
+        return toolCardHtml({
+          title: name,
+          desc: s.name,
+          icon: 'MCP',
+          active: checked,
+          cls: 'tool-mcp',
+          attrs: `data-server="${escAttr(s.id)}" data-server-name="${escAttr(s.name)}" data-tool-name="${escAttr(name)}"`
+        });
       }).join('') || '<div style="font-size:11px;color:#4a4a6a">No tools discovered.</div>'}
     </div>`;
   }).join('') || '<div style="color:#4a4a6a;font-size:12px">No public MCP servers.</div>';
@@ -1960,32 +2045,30 @@ async function openToolsDrawer() {
     const perms = (def.actions || []).slice(0,5).join(', ') || 'connected';
     const id = a.connector_type || a.app_name;
     const checked = !S.selectedConnectorIds?.length || S.selectedConnectorIds.includes(id);
-    return `<div style="padding:9px;border:1px solid #1a1a30;border-radius:8px;background:#080812;display:grid;gap:8px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <button class="voice-btn" type="button" title="Use ${escAttr(def.name || id)}" onclick="useToolApp('${escAttr(id)}')" style="font-size:15px;border-color:#064e3b">${renderConnectorIcon(def.icon ? def : { icon:'🔌', name:id }, 18, 'tool-app-icon')}</button>
-        <div style="min-width:0;flex:1">
-          <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(def.name || a.name || id)}</div>
-          <div style="font-size:11px;color:#34d399">${escHtml(a.status || 'active')}</div>
-        </div>
-        <input type="checkbox" class="tool-app" value="${escAttr(id)}" ${checked?'checked':''} title="Enable in chat" style="accent-color:#7c6ff7">
-      </div>
-      <div style="font-size:11px;color:#9090b0">Permissions: ${escHtml(perms)}</div>
-    </div>`;
+    const slash = CONNECTOR_SLASH_MAP[id] || id;
+    return toolCardHtml({
+      title: def.name || a.name || id,
+      desc: `${a.status || 'active'} / /${slash} / ${perms}`,
+      icon: renderConnectorIcon(def.icon ? def : { icon:'APP', name:id }, 18, 'tool-app-icon'),
+      active: checked,
+      cls: 'tool-app',
+      attrs: `data-tool-app="${escAttr(id)}" ondblclick="event.stopPropagation();useToolApp('${escAttr(id)}')"`
+    });
   }).join('') || '<div style="color:#4a4a6a;font-size:12px">No connected apps yet.</div>';
-  openModal(`<div class="modal" style="width:680px">
+  openModal(`<div class="modal" style="width:760px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700">Tools</div>
-      <span class="badge badge-info">Chat controls</span>
+      <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700">Tools HUD</div>
+      <span class="badge badge-ok">Web search armed</span>
     </div>
     <div style="display:grid;gap:14px">
-      <div class="card" style="padding:12px;display:flex;gap:10px;flex-wrap:wrap">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="td-rag" ${S.useRag?'checked':''} style="accent-color:#7c6ff7"> RAG</label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="td-web" ${S.useWeb?'checked':''} style="accent-color:#7c6ff7"> Web Search</label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="td-plan" ${S.planMode?'checked':''} style="accent-color:#7c6ff7"> Plan Mode</label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="td-agent" ${S.agentMode?'checked':''} style="accent-color:#7c6ff7"> Tool Agent</label>
+      <div class="tool-grid">
+        ${toolCardHtml({ id:'rag', title:'RAG', desc:'Use uploaded knowledge and indexed docs.', icon:'RAG', active:S.useRag })}
+        ${toolCardHtml({ id:'web', title:'Web Search', desc:'Active by default for fresh answers.', icon:'WEB', active:S.useWeb })}
+        ${toolCardHtml({ id:'plan', title:'Plan Mode', desc:'Break down bigger work before execution.', icon:'PLAN', active:S.planMode })}
+        ${toolCardHtml({ id:'agent', title:'Tool Agent', desc:'Let JAZZ call tools when needed.', icon:'AUTO', active:S.agentMode })}
       </div>
-      <div><div style="font-size:12px;font-weight:700;margin-bottom:6px;color:#9090b0">Connected Apps</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">${appRows}</div></div>
-      <div><div style="font-size:12px;font-weight:700;margin-bottom:6px;color:#9090b0">Skills</div><div style="display:grid;gap:8px">${skillRows}</div></div>
+      <div><div style="font-size:12px;font-weight:700;margin-bottom:6px;color:#9090b0">Connected Apps</div><div class="tool-grid">${appRows}</div></div>
+      <div><div style="font-size:12px;font-weight:700;margin-bottom:6px;color:#9090b0">Skills</div><div class="tool-grid">${skillRows}</div></div>
       <div><div style="font-size:12px;font-weight:700;margin-bottom:6px;color:#9090b0">MCP Tools</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">${mcpRows}</div></div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
@@ -1995,13 +2078,13 @@ async function openToolsDrawer() {
   </div>`);
 }
 function applyToolsDrawer() {
-  S.useRag = !!document.getElementById('td-rag')?.checked;
-  S.useWeb = !!document.getElementById('td-web')?.checked;
-  S.planMode = !!document.getElementById('td-plan')?.checked;
-  S.agentMode = !!document.getElementById('td-agent')?.checked;
-  S.selectedConnectorIds = [...document.querySelectorAll('.tool-app:checked')].map(x => x.value);
-  S.selectedSkillIds = [...document.querySelectorAll('.tool-skill:checked')].map(x => x.value);
-  S.selectedMcpTools = [...document.querySelectorAll('.tool-mcp:checked')].map(x => ({ server_id:x.dataset.server, server_name:x.dataset.serverName, name:x.value }));
+  S.useRag = isToolCardActive('rag');
+  S.useWeb = isToolCardActive('web');
+  S.planMode = isToolCardActive('plan');
+  S.agentMode = isToolCardActive('agent');
+  S.selectedConnectorIds = [...document.querySelectorAll('.tool-app.active')].map(x => x.dataset.toolApp).filter(Boolean);
+  S.selectedSkillIds = [...document.querySelectorAll('.tool-skill.active')].map(x => x.dataset.toolSkill).filter(Boolean);
+  S.selectedMcpTools = [...document.querySelectorAll('.tool-mcp.active')].map(x => ({ server_id:x.dataset.server, server_name:x.dataset.serverName, name:x.dataset.toolName })).filter(x => x.server_id && x.name);
   saveToolPrefs(); updateToolsCount(); closeModal(); toast('Tools updated','ok');
 }
 // Connector type → slash command mapping (connector_type may differ from slash command string)
@@ -2139,20 +2222,158 @@ async function newSession() {
   closeSidebar();
 }
 
-// ── Image ──
-function attachImage(input) {
-  const f = input.files[0]; if (!f) return;
-  if (f.size > 20*1024*1024) { toast('Image too large (max 20 MB)', 'err'); return; }
-  const r = new FileReader();
-  r.onload = e => {
-    S.pendingImage = e.target.result;
-    const bar = document.getElementById('img-preview-bar'), thumb = document.getElementById('img-preview-thumb');
-    if (bar && thumb) { thumb.src = S.pendingImage; bar.style.display = 'block'; }
-  };
-  r.readAsDataURL(f);
-  input.value = '';
+// ── Attachments ──
+const ATTACH_MAX_BYTES = 50 * 1024 * 1024;
+function fmtFileSize(bytes = 0) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
-function removeImage() { S.pendingImage = null; const bar = document.getElementById('img-preview-bar'); if (bar) bar.style.display = 'none'; }
+function isImageFile(att) { return String(att?.type || att?.file?.type || '').startsWith('image/'); }
+function isAudioFile(att) {
+  const type = String(att?.type || att?.file?.type || '');
+  const name = String(att?.name || att?.file?.name || '').toLowerCase();
+  return type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|webm|flac)$/i.test(name);
+}
+function attachmentExt(name = '', type = '') {
+  const ext = String(name || '').split('.').pop();
+  if (ext && ext !== name) return ext.slice(0, 4).toUpperCase();
+  if (String(type).includes('/')) return String(type).split('/').pop().slice(0, 4).toUpperCase();
+  return 'FILE';
+}
+function addPendingFiles(files = []) {
+  const accepted = [];
+  [...files].forEach(file => {
+    if (!file) return;
+    if (file.size > ATTACH_MAX_BYTES) {
+      toast(`${file.name || 'File'} is over 50 MB`, 'err');
+      return;
+    }
+    accepted.push({
+      id: 'att_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+      file,
+      name: file.name || 'attachment',
+      size: file.size || 0,
+      type: file.type || 'application/octet-stream',
+      previewUrl: file.type?.startsWith('image/') ? URL.createObjectURL(file) : '',
+      dataUrl: '',
+      uploaded: null,
+      error: ''
+    });
+  });
+  if (!accepted.length) return;
+  S.pendingAttachments = [...(S.pendingAttachments || []), ...accepted].slice(0, 12);
+  renderAttachmentTray();
+  toast(`${accepted.length} file${accepted.length>1?'s':''} attached`, 'info');
+}
+function attachFiles(input) {
+  addPendingFiles(input?.files || []);
+  if (input) input.value = '';
+}
+function attachImage(input) { attachFiles(input); }
+function removeAttachment(id) {
+  const next = [];
+  (S.pendingAttachments || []).forEach(att => {
+    if (att.id === id) {
+      if (att.previewUrl) URL.revokeObjectURL(att.previewUrl);
+    } else next.push(att);
+  });
+  S.pendingAttachments = next;
+  renderAttachmentTray();
+}
+function clearAttachments() {
+  (S.pendingAttachments || []).forEach(att => { if (att.previewUrl) URL.revokeObjectURL(att.previewUrl); });
+  S.pendingAttachments = [];
+  S.pendingImage = null;
+  renderAttachmentTray();
+  const bar = document.getElementById('img-preview-bar'); if (bar) bar.style.display = 'none';
+}
+function removeImage() { clearAttachments(); }
+function renderAttachmentCards(list = [], removable = false) {
+  if (!list.length) return '';
+  return `<div class="msg-attachments">${list.map(att => {
+    const thumb = isImageFile(att) && (att.previewUrl || att.dataUrl)
+      ? `<img class="attach-thumb" src="${escAttr(att.previewUrl || att.dataUrl)}" alt="">`
+      : `<span class="attach-icon">${escHtml(attachmentExt(att.name, att.type))}</span>`;
+    const rm = removable ? `<button class="attach-remove" onclick="removeAttachment('${escAttr(att.id)}')" title="Remove" type="button">x</button>` : '';
+    const status = att.error ? ` / ${att.error}` : att.uploaded ? ' / uploaded' : '';
+    return `<div class="attach-card ${att.error?'error':''}">
+      ${thumb}
+      <span class="attach-meta"><span class="attach-name">${escHtml(att.name)}</span><span class="attach-sub">${escHtml(fmtFileSize(att.size))} / ${escHtml(att.type || 'file')}${escHtml(status)}</span></span>
+      ${rm}
+    </div>`;
+  }).join('')}</div>`;
+}
+function renderAttachmentTray() {
+  const tray = document.getElementById('attach-tray');
+  if (!tray) return;
+  const items = S.pendingAttachments || [];
+  if (!items.length) { tray.style.display = 'none'; tray.innerHTML = ''; return; }
+  tray.style.display = 'flex';
+  tray.innerHTML = renderAttachmentCards(items, true).replace('class="msg-attachments"', 'class="attach-list"') +
+    `<span class="attach-hint">Files travel with the next message</span>`;
+}
+function fileToDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = e => resolve(e.target.result);
+    r.onerror = () => reject(r.error || new Error('File read failed'));
+    r.readAsDataURL(file);
+  });
+}
+async function uploadChatAttachment(att) {
+  const next = { ...att };
+  try {
+    if (isImageFile(att) && !att.dataUrl && att.size <= 20 * 1024 * 1024) next.dataUrl = await fileToDataURL(att.file);
+    const fd = new FormData();
+    fd.append('file', att.file, att.name);
+    next.uploaded = await req('POST', '/upload/file', fd, true);
+    if (isAudioFile(att) && att.size <= 25 * 1024 * 1024) {
+      const audioFd = new FormData();
+      audioFd.append('file', att.file, att.name);
+      next.transcript = await req('POST', '/voice/transcribe', audioFd, true);
+    }
+  } catch(e) {
+    next.error = errText(e.message || e) || 'upload failed';
+  }
+  return next;
+}
+async function prepareAttachmentsForSend(attachments = []) {
+  const out = [];
+  for (const att of attachments) out.push(await uploadChatAttachment(att));
+  return out;
+}
+function buildAttachmentContext(attachments = []) {
+  if (!attachments.length) return '';
+  const lines = ['[Attached files]'];
+  attachments.forEach((att, i) => {
+    const up = att.uploaded || {};
+    lines.push(`${i+1}. ${att.name} (${att.type || 'file'}, ${fmtFileSize(att.size)})`);
+    if (up.filename) lines.push(`Stored upload: ${up.filename}`);
+    if (att.error) lines.push(`Upload note: ${att.error}`);
+    const preview = String(up.text_preview || '').trim();
+    if (preview) lines.push(`Extracted preview:\n${preview.slice(0, 2000)}`);
+    const transcript = String(att.transcript?.transcript || '').trim();
+    if (transcript) lines.push(`Audio transcript:\n${transcript.slice(0, 2000)}`);
+    if (!preview && !transcript && !att.error) lines.push('No text preview was extracted; use the file metadata and visible image/audio/video context when relevant.');
+  });
+  return lines.join('\n');
+}
+function dragComposerFiles(e) {
+  if (!e.dataTransfer?.types?.includes('Files')) return;
+  e.preventDefault();
+  document.getElementById('composer-box')?.classList.add('composer-drag');
+}
+function leaveComposerFiles(e) {
+  if (e.currentTarget && !e.currentTarget.contains(e.relatedTarget)) e.currentTarget.classList.remove('composer-drag');
+}
+function dropComposerFiles(e) {
+  if (!e.dataTransfer?.files?.length) return;
+  e.preventDefault();
+  e.currentTarget?.classList.remove('composer-drag');
+  addPendingFiles(e.dataTransfer.files);
+}
 
 // ── Queue ──
 function renderQueuePanel() {
@@ -2165,7 +2386,7 @@ function renderQueuePanel() {
     <div class="queue-item">
       <span style="font-size:10px;font-family:'DM Mono',monospace;color:#4a4a6a">#${i+1}</span>
       <span class="q-preview">${escHtml(item.msg.slice(0,80)+(item.msg.length>80?'…':''))}</span>
-      ${item.imgData ? '<span style="font-size:11px">📎</span>' : ''}
+      ${item.attachments?.length ? `<span style="font-size:11px">${item.attachments.length} file</span>` : ''}
       <button class="q-rm" onclick="removeQueueItem('${item.id}')">✕</button>
     </div>`).join('');
   const btn = document.getElementById('send-btn-label');
@@ -2187,36 +2408,52 @@ function isToolSlashMessage(text) {
 
 function submitChat() {
   const inp = document.getElementById('chat-input');
-  const msg = inp.value.trim(); if (!msg) return;
+  const attachments = [...(S.pendingAttachments || [])];
+  let msg = inp.value.trim();
+  if (!msg && !attachments.length) return;
+  if (!msg) msg = 'Please analyze the attached file(s).';
   inp.value = ''; inp.style.height = 'auto';
   document.getElementById('slash-palette').style.display = 'none';
-  const imgData = S.pendingImage || null;
-  if (imgData) removeImage();
+  S.pendingAttachments = [];
+  S.pendingImage = null;
+  renderAttachmentTray();
+  const bar = document.getElementById('img-preview-bar'); if (bar) bar.style.display = 'none';
   if (S.streaming) {
-    S.chatQueue.push({ id: 'q_'+Date.now()+'_'+Math.random().toString(36).slice(2), msg, imgData });
+    S.chatQueue.push({ id: 'q_'+Date.now()+'_'+Math.random().toString(36).slice(2), msg, attachments });
     renderQueuePanel(); toast(`Queued (#${S.chatQueue.length})`, 'info'); return;
   }
-  _executeChat(msg, imgData);
+  _executeChat(msg, attachments);
 }
-function _executeChat(msg, imgData) { S.streaming = true; renderQueuePanel(); _sendChatInternal(msg, imgData); }
+function _executeChat(msg, attachments = []) { S.streaming = true; renderQueuePanel(); _sendChatInternal(msg, attachments); }
 function _tryRunNextQueued() {
   if (!S.chatQueue.length) { S.streaming = false; renderQueuePanel(); return; }
-  const next = S.chatQueue.shift(); renderQueuePanel(); _executeChat(next.msg, next.imgData);
+  const next = S.chatQueue.shift(); renderQueuePanel(); _executeChat(next.msg, next.attachments || []);
 }
 
-async function _sendChatInternal(msg, imgData) {
+async function _sendChatInternal(msg, attachments = []) {
   const msgsEl = document.getElementById('messages');
   if (!msgsEl) { S.streaming = false; _tryRunNextQueued(); return; }
   const empty = msgsEl.querySelector('div[style*="align-items:center"]');
   if (empty) msgsEl.innerHTML = '';
 
-  const imgHtml = imgData ? `<img src="${imgData}" style="max-width:200px;max-height:160px;object-fit:contain;border-radius:8px;margin-top:6px;border:1px solid #1a1a30;display:block">` : '';
-  msgsEl.insertAdjacentHTML('beforeend', `<div style="display:flex;justify-content:flex-end" class="fade-in">${renderUserContent(msg, imgHtml)}</div>`);
+  const localAttachments = attachments || [];
+  const attachHtml = renderAttachmentCards(localAttachments, false);
+  msgsEl.insertAdjacentHTML('beforeend', `<div style="display:flex;justify-content:flex-end" class="fade-in">${renderUserContent(msg, attachHtml)}</div>`);
 
   const aiId = 'ai-' + Date.now();
   msgsEl.insertAdjacentHTML('beforeend', `<div class="fade-in" id="${aiId}"><div class="tool-timeline" id="${aiId}-tools"></div><div class="msg-ai cursor-blink" style="min-height:20px"></div></div>`);
   scrollBottom();
   document.getElementById('typing-ind').style.display = 'block';
+
+  let apiMsg = msg;
+  let imgData = null;
+  if (localAttachments.length) {
+    const preparedAttachments = await prepareAttachmentsForSend(localAttachments);
+    const attachmentContext = buildAttachmentContext(preparedAttachments);
+    if (attachmentContext) apiMsg = `${msg}\n\n${attachmentContext}`;
+    const firstImage = preparedAttachments.find(att => isImageFile(att) && att.dataUrl);
+    if (firstImage) imgData = firstImage.dataUrl;
+  }
 
   let full = '', displayText = '', thinkingContent = '';
   let liveToolEvents = [];
@@ -2312,7 +2549,7 @@ async function _sendChatInternal(msg, imgData) {
   async function _tryEventSource() {
     return new Promise(resolve => {
       const toolOptions = selectedToolOptions();
-      const params = new URLSearchParams({ message: msg, model_id: S.modelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, tools_json: JSON.stringify(toolOptions), skill_ids: (S.selectedSkillIds||[]).join(','), token: S.token });
+      const params = new URLSearchParams({ message: apiMsg, model_id: S.modelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, tools_json: JSON.stringify(toolOptions), skill_ids: (S.selectedSkillIds||[]).join(','), token: S.token });
       if (S.activeSession) params.append('session_id', S.activeSession);
       if (imgData) params.append('image_url', imgData);
       const es = new EventSource(`${API}/chat/stream?${params}`);
@@ -2333,7 +2570,7 @@ async function _sendChatInternal(msg, imgData) {
 
   async function _tryPostStream() {
     try {
-      const body = { message: msg, model_id: S.modelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, agent_mode: S.agentMode, tools: selectedToolOptions(), skill_ids: S.selectedSkillIds||[], session_id: S.activeSession||undefined, image_url: imgData||undefined };
+      const body = { message: apiMsg, model_id: S.modelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, agent_mode: S.agentMode, tools: selectedToolOptions(), skill_ids: S.selectedSkillIds||[], session_id: S.activeSession||undefined, image_url: imgData||undefined };
       const resp = await apiFetch(`${API}/chat/stream`, { method:'POST', headers:{ 'Authorization':'Bearer '+S.token, 'Content-Type':'application/json' }, body: JSON.stringify(body) });
       if (!resp.ok) { const e = await resp.json().catch(() => ({ detail: resp.statusText })); _onError(errText(e.detail || e.message || e || 'POST failed')); return; }
       const reader = resp.body.getReader(), dec = new TextDecoder();
@@ -2357,7 +2594,7 @@ async function _sendChatInternal(msg, imgData) {
   }
 
   try {
-    const preferPost = msg.length > 1800 || !!imgData || S.agentMode;
+    const preferPost = apiMsg.length > 1800 || !!imgData || localAttachments.length || S.agentMode;
     const esWorked = preferPost ? false : await _tryEventSource();
     if (!esWorked) await _tryPostStream();
   } catch(err) { _onError(err.message); }
@@ -2375,10 +2612,16 @@ function chatKey(e) {
   }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitChat(); }
 }
-// Paste image from clipboard into the chat composer
+// Paste files from clipboard into the chat composer
 document.addEventListener('paste', e => {
   if (document.activeElement?.id !== 'chat-input' && !document.getElementById('composer-box')?.contains(document.activeElement)) return;
   const items = e.clipboardData?.items || [];
+  const pastedFiles = [...items].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean);
+  if (pastedFiles.length) {
+    e.preventDefault();
+    addPendingFiles(pastedFiles);
+    return;
+  }
   for (const item of items) {
     if (item.type.startsWith('image/')) {
       e.preventDefault();
