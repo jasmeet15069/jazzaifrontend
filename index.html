@@ -407,11 +407,18 @@ select.input{cursor:pointer;appearance:none}
       <nav style="padding:10px 8px;flex-shrink:0">
         <button class="nav-item sidebar-new-chat" type="button" onclick="newSession()"><span class="icon">+</span>New Chat</button>
         <a class="nav-item" data-page="chat"        onclick="navigate('chat')">       <span class="icon">💬</span>Chat</a>
+        <a class="nav-item" data-page="documents"   data-feature-key="documents" onclick="navigate('documents')">  <span class="icon">&#128196;</span>Documents</a>
+        <a class="nav-item" data-page="memory"      data-feature-key="memory" onclick="navigate('memory')">     <span class="icon">&#128161;</span>Memory</a>
+        <a class="nav-item" data-page="connectors"  data-feature-key="connectors" onclick="navigate('connectors')"> <span class="icon">&#128279;</span>Connectors</a>
+        <a class="nav-item" data-page="mcp"         data-feature-key="mcp" onclick="navigate('mcp')">        <span class="icon">&#9881;</span>MCP Servers</a>
         <a class="nav-item" data-page="agents"      data-feature-key="agents" onclick="navigate('agents')">     <span class="icon">🤖</span>Agent Jobs</a>
         <a class="nav-item" data-page="playground"  data-feature-key="playground" onclick="navigate('playground')"> <span class="icon">⚡</span>Playground</a>
         <a class="nav-item" data-page="multimodel"  data-feature-key="multimodel" onclick="navigate('multimodel')"> <span class="icon">MM</span>Multi-Model</a>
         <a class="nav-item" data-page="websites"    data-feature-key="websites" onclick="navigate('websites')">   <span class="icon">🌐</span>Website Builder</a>
         <a class="nav-item" data-page="code"        data-feature-key="code" onclick="navigate('code')">       <span class="icon">💻</span>Code Runner</a>
+        <a class="nav-item" data-page="livy"        data-feature-key="livy" onclick="navigate('livy')">       <span class="icon">&#128293;</span>Spark</a>
+        <a class="nav-item" data-page="apikeys"     data-feature-key="apikeys" onclick="navigate('apikeys')">    <span class="icon">&#128273;</span>API Keys</a>
+        <a class="nav-item" data-page="settings"    onclick="navigate('settings')">   <span class="icon">&#128100;</span>Settings</a>
         <a id="admin-link" class="nav-item" data-page="admin" onclick="navigate('admin')" style="display:none"><span class="icon">👑</span>Admin</a>
       </nav>
 
@@ -656,13 +663,36 @@ const SLASH_COMMANDS = [
 ];
 
 const SIDEBAR_FEATURES = [
+  { key:'documents',  page:'documents',  label:'Documents',       icon:'DOC' },
+  { key:'memory',     page:'memory',     label:'Memory',          icon:'MEM' },
+  { key:'connectors', page:'connectors', label:'Connectors',      icon:'CON' },
+  { key:'mcp',        page:'mcp',        label:'MCP Servers',     icon:'MCP' },
   { key:'agents',     page:'agents',     label:'Agent Jobs',      icon:'🤖' },
   { key:'playground', page:'playground', label:'Playground',      icon:'⚡' },
   { key:'multimodel', page:'multimodel', label:'Multi-Model',     icon:'MM' },
   { key:'websites',   page:'websites',   label:'Website Builder', icon:'🌐' },
   { key:'code',       page:'code',       label:'Code Runner',     icon:'💻' },
+  { key:'livy',       page:'livy',       label:'Spark',           icon:'SPK' },
+  { key:'apikeys',    page:'apikeys',    label:'API Keys',        icon:'API' },
 ];
 const SIDEBAR_FEATURE_BY_PAGE = Object.fromEntries(SIDEBAR_FEATURES.map(f => [f.page, f]));
+
+function localSidebarFeatureRow(f, isEnabled = true) {
+  return { feature_key:f.key, page_key:f.page, display_name:f.label, icon:f.icon, is_enabled:isEnabled };
+}
+function mergeLocalSidebarFeatures(rows = []) {
+  const byKey = new Map((rows || []).map(r => [String(r.feature_key || r.key || ''), r]));
+  const localKeys = new Set(SIDEBAR_FEATURES.map(f => f.key));
+  const merged = SIDEBAR_FEATURES.map(f => {
+    const row = byKey.get(f.key);
+    return row ? { ...localSidebarFeatureRow(f, row.is_enabled !== false), ...row, feature_key:row.feature_key || f.key, page_key:row.page_key || f.page } : localSidebarFeatureRow(f, true);
+  });
+  (rows || []).forEach(r => {
+    const key = String(r.feature_key || r.key || '');
+    if (key && !localKeys.has(key)) merged.push(r);
+  });
+  return merged;
+}
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -681,6 +711,7 @@ const S = {
   ],
   ws: null, wsRetry: 0,
   recording: false, mediaRec: null, audioChunks: [], voiceMode: false,
+  liveVoiceRoom: null, liveVoiceTrack: null, liveVoiceSession: null, liveVoiceConnected: false,
   usage: null, pendingImage: null,
   chatQueue: [], queueRunning: false,
   chatSearchOpen: false, chatSearchQuery: '', chatSearchResults: [], chatSearchTimer: null, chatSearchLoading: false,
@@ -926,10 +957,17 @@ function canNavigatePage(page) {
 async function loadSidebarFeatureAccess() {
   try {
     const d = await get('/features/sidebar');
-    S.sidebarFeatures = d.features || [];
-    S.enabledSidebarFeatures = new Set((d.enabled || defaultSidebarFeatureKeys()).map(String));
+    const serverRows = d.features || [];
+    const knownKeys = new Set(serverRows.map(r => String(r.feature_key || r.key || '')));
+    const enabledKeys = Array.isArray(d.enabled)
+      ? d.enabled.map(String)
+      : (serverRows.length ? serverRows.filter(r => r.is_enabled !== false).map(r => String(r.feature_key || r.key || '')) : defaultSidebarFeatureKeys());
+    const enabled = new Set(enabledKeys);
+    SIDEBAR_FEATURES.forEach(f => { if (!knownKeys.has(f.key)) enabled.add(f.key); });
+    S.sidebarFeatures = mergeLocalSidebarFeatures(serverRows);
+    S.enabledSidebarFeatures = enabled;
   } catch(e) {
-    S.sidebarFeatures = SIDEBAR_FEATURES.map(f => ({ ...f, feature_key:f.key, display_name:f.label, is_enabled:true }));
+    S.sidebarFeatures = mergeLocalSidebarFeatures([]);
     S.enabledSidebarFeatures = new Set(defaultSidebarFeatureKeys());
   }
   applySidebarFeatureAccess();
@@ -1218,6 +1256,7 @@ async function chat({ sessionId } = {}) {
             </label>
             <!-- Voice -->
             <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" title="Voice input">🎙</button>
+            <button class="voice-btn" id="live-voice-btn" onclick="openLiveVoice()" title="Live voice mode">&#128266;</button>
             <button class="btn btn-ghost btn-sm tools-summary" id="tools-btn" onclick="openToolsDrawer()" title="Tools">Tools <span id="tools-count" class="badge badge-info" style="font-size:9px">0</span></button>
             <!-- Model pill -->
             <div class="model-pill" id="model-pill" onclick="toggleModelDropdown(event)" title="Select model">
@@ -2219,6 +2258,151 @@ async function toggleVoice() {
   } else {
     S.mediaRec.stop(); S.recording = false;
     document.getElementById('voice-btn').classList.remove('recording');
+  }
+}
+
+let _liveKitClientPromise = null;
+function loadLiveKitClient() {
+  const existing = window.LivekitClient || window.LiveKitClient || window.livekitClient;
+  if (existing) return Promise.resolve(existing);
+  if (_liveKitClientPromise) return _liveKitClientPromise;
+  _liveKitClientPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js';
+    s.async = true;
+    s.onload = () => {
+      const LK = window.LivekitClient || window.LiveKitClient || window.livekitClient;
+      LK ? resolve(LK) : reject(new Error('LiveKit client did not load'));
+    };
+    s.onerror = () => reject(new Error('LiveKit client failed to load'));
+    document.head.appendChild(s);
+  });
+  return _liveKitClientPromise;
+}
+function liveVoiceStatusStyle(type = 'info') {
+  const colors = {
+    ok: ['#064e3b', '#34d399'],
+    err: ['#450a0a', '#f87171'],
+    warn: ['#431407', '#fbbf24'],
+    info: ['#0a0f1a', '#60a5fa'],
+  };
+  const c = colors[type] || colors.info;
+  return `background:${c[0]};border:1px solid ${c[1]};color:${c[1]}`;
+}
+function setLiveVoiceStatus(msg, type = 'info') {
+  const el = document.getElementById('live-voice-status');
+  if (!el) return;
+  el.style.cssText = `${liveVoiceStatusStyle(type)};border-radius:10px;padding:10px 12px;font-size:13px`;
+  el.textContent = msg;
+}
+function setLiveVoiceBusy(isBusy) {
+  const start = document.getElementById('live-voice-start');
+  const stop = document.getElementById('live-voice-stop');
+  if (start) start.disabled = isBusy || S.liveVoiceConnected;
+  if (stop) stop.disabled = isBusy || !S.liveVoiceConnected;
+}
+async function openLiveVoice() {
+  openModal(`<div class="modal" style="width:560px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <div style="width:34px;height:34px;border-radius:10px;background:#111124;border:1px solid #252540;display:flex;align-items:center;justify-content:center">&#128266;</div>
+      <div>
+        <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700">Live Voice</div>
+        <div id="live-voice-room-meta" style="font-size:12px;color:#9090b0;margin-top:2px">Checking LiveKit...</div>
+      </div>
+    </div>
+    <div id="live-voice-status" style="${liveVoiceStatusStyle('info')};border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px">Idle</div>
+    <div id="live-voice-audio" style="display:grid;gap:8px;margin-bottom:14px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+      <button class="btn btn-danger" id="live-voice-stop" onclick="stopLiveVoice()" ${S.liveVoiceConnected?'':'disabled'}>Stop</button>
+      <button class="btn btn-primary" id="live-voice-start" onclick="startLiveVoice()" ${S.liveVoiceConnected?'disabled':''}>Start</button>
+    </div>
+  </div>`);
+  setLiveVoiceBusy(false);
+  try {
+    const d = await get('/voice/livekit/status');
+    const meta = document.getElementById('live-voice-room-meta');
+    if (meta) meta.textContent = d.available ? 'LiveKit ready' : 'LiveKit not configured';
+    setLiveVoiceStatus(S.liveVoiceConnected ? 'Live voice is connected.' : (d.available ? 'Ready to start a voice room.' : 'LiveKit credentials are missing on the server.'), d.available ? 'ok' : 'warn');
+  } catch(e) {
+    setLiveVoiceStatus(e.message || 'Unable to check LiveKit status', 'err');
+  }
+}
+function attachLiveVoiceTrack(track, participant) {
+  const wrap = document.getElementById('live-voice-audio');
+  if (!wrap || !track || track.kind !== 'audio') return;
+  const id = 'live-audio-' + (participant?.identity || Date.now());
+  const row = document.createElement('div');
+  row.id = id;
+  row.style.cssText = 'border:1px solid #1a1a30;border-radius:10px;padding:9px 10px;background:#080812;font-size:12px;color:#9090b0;display:grid;gap:6px';
+  row.innerHTML = `<div style="color:#e4e4f4;font-weight:600">${escHtml(participant?.name || participant?.identity || 'Voice participant')}</div>`;
+  const audio = track.attach();
+  audio.autoplay = true;
+  audio.controls = true;
+  audio.style.width = '100%';
+  row.appendChild(audio);
+  wrap.appendChild(row);
+}
+async function startLiveVoice() {
+  if (S.liveVoiceConnected) { setLiveVoiceStatus('Live voice is already connected.', 'ok'); return; }
+  setLiveVoiceBusy(true);
+  setLiveVoiceStatus('Starting voice room...', 'info');
+  try {
+    const session = await post('/voice/livekit/session', {});
+    const LK = await loadLiveKitClient();
+    const room = new LK.Room({ adaptiveStream:true, dynacast:true });
+    room.on(LK.RoomEvent.TrackSubscribed, (track, publication, participant) => attachLiveVoiceTrack(track, participant));
+    room.on(LK.RoomEvent.Disconnected, () => {
+      S.liveVoiceConnected = false;
+      S.liveVoiceRoom = null;
+      document.getElementById('live-voice-btn')?.classList.remove('recording');
+      setLiveVoiceBusy(false);
+      setLiveVoiceStatus('Live voice disconnected.', 'warn');
+    });
+    await room.connect(session.url, session.token);
+    const localTrack = await LK.createLocalAudioTrack({
+      echoCancellation:true,
+      noiseSuppression:true,
+      autoGainControl:true,
+    });
+    await room.localParticipant.publishTrack(localTrack);
+    S.liveVoiceRoom = room;
+    S.liveVoiceTrack = localTrack;
+    S.liveVoiceSession = session.session_id;
+    S.liveVoiceConnected = true;
+    document.getElementById('live-voice-btn')?.classList.add('recording');
+    const meta = document.getElementById('live-voice-room-meta');
+    if (meta) meta.textContent = session.room || 'Connected room';
+    setLiveVoiceStatus('Connected. Speak naturally.', 'ok');
+  } catch(e) {
+    await stopLiveVoice(false);
+    setLiveVoiceStatus(e.message || 'Live voice failed to start', 'err');
+    toast(e.message || 'Live voice failed to start', 'err');
+  } finally {
+    setLiveVoiceBusy(false);
+  }
+}
+async function stopLiveVoice(showToast = true) {
+  const sid = S.liveVoiceSession;
+  try {
+    if (S.liveVoiceTrack) {
+      try { S.liveVoiceTrack.stop(); } catch(e) {}
+      S.liveVoiceTrack = null;
+    }
+    if (S.liveVoiceRoom) {
+      try { await S.liveVoiceRoom.disconnect(); } catch(e) {}
+      S.liveVoiceRoom = null;
+    }
+    if (sid) {
+      post('/voice/livekit/session/' + encodeURIComponent(sid) + '/end', {}).catch(() => {});
+    }
+  } finally {
+    S.liveVoiceSession = null;
+    S.liveVoiceConnected = false;
+    document.getElementById('live-voice-btn')?.classList.remove('recording');
+    setLiveVoiceBusy(false);
+    setLiveVoiceStatus('Live voice stopped.', 'warn');
+    if (showToast) toast('Live voice stopped', 'info');
   }
 }
 
@@ -3582,7 +3766,7 @@ async function adminTab(tab, el) {
       ab.innerHTML = renderAdminRolePermissions(d);
     } else if (tab === 'sidebar-features') {
       const d = await get('/admin/sidebar-features');
-      const rows = d.features || [];
+      const rows = mergeLocalSidebarFeatures(d.features || []);
       const enabledCount = rows.filter(r => !!r.is_enabled).length;
       ab.innerHTML = `<div style="display:grid;gap:14px">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
