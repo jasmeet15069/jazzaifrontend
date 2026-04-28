@@ -425,6 +425,54 @@ select.input{cursor:pointer;appearance:none}
 .tool-card.active .tool-desc{color:#a6b1d4}
 .tool-card .tool-state{position:absolute;right:8px;top:8px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.08em;color:#4a4a6a}
 .tool-card.active .tool-state{color:#34d399}
+.voice-wave-icon{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;gap:2px;color:currentColor}
+.voice-wave-icon i{display:block;width:2px;border-radius:999px;background:currentColor;opacity:.9}
+.voice-wave-icon i:nth-child(1){height:6px}.voice-wave-icon i:nth-child(2){height:12px}.voice-wave-icon i:nth-child(3){height:17px}.voice-wave-icon i:nth-child(4){height:11px}.voice-wave-icon i:nth-child(5){height:7px}
+.voice-btn:hover .voice-wave-icon i,.voice-btn.recording .voice-wave-icon i{animation:voiceWave 1s ease-in-out infinite}
+.voice-btn:hover .voice-wave-icon i:nth-child(2),.voice-btn.recording .voice-wave-icon i:nth-child(2){animation-delay:.08s}
+.voice-btn:hover .voice-wave-icon i:nth-child(3),.voice-btn.recording .voice-wave-icon i:nth-child(3){animation-delay:.16s}
+.voice-btn:hover .voice-wave-icon i:nth-child(4),.voice-btn.recording .voice-wave-icon i:nth-child(4){animation-delay:.24s}
+.voice-btn:hover .voice-wave-icon i:nth-child(5),.voice-btn.recording .voice-wave-icon i:nth-child(5){animation-delay:.32s}
+@keyframes voiceWave{0%,100%{transform:scaleY(.55)}50%{transform:scaleY(1.2)}}
+.files-top-btn{width:36px;height:36px;border:1px solid #1a1a30;border-radius:8px;background:#0c0c1a;color:#e4e4f4;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;position:relative;transition:.16s;flex-shrink:0}
+.files-top-btn:hover,.files-top-btn.active{border-color:#7c6ff7;background:#111124;color:#fff}
+.file-doc-icon{width:16px;height:18px;border:1.8px solid currentColor;border-radius:3px;display:inline-block;position:relative}
+.file-doc-icon:before{content:"";position:absolute;right:-1.8px;top:-1.8px;border-left:6px solid transparent;border-bottom:6px solid currentColor;width:0;height:0;opacity:.85}
+.file-doc-icon:after{content:"";position:absolute;left:3px;right:3px;bottom:4px;height:1.5px;background:currentColor;box-shadow:0 -4px 0 currentColor;opacity:.7}
+.files-dot{position:absolute;right:4px;top:4px;width:8px;height:8px;border-radius:50%;background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.75);display:none}
+.files-right-rail{position:fixed;right:8px;bottom:78px;z-index:120;display:flex;flex-direction:column;align-items:center;gap:8px}
+.files-right-rail .files-top-btn{width:38px;height:38px;background:#0a0a12cc;backdrop-filter:blur(10px)}
+.files-side-panel{position:fixed;right:14px;top:76px;bottom:18px;width:min(430px,calc(100vw - 28px));z-index:170;background:rgba(22,22,20,.96);border:1px solid rgba(255,255,255,.14);border-radius:18px;box-shadow:0 24px 90px rgba(0,0,0,.52);backdrop-filter:blur(18px);display:none;overflow:hidden;color:#f5f5f0}
+.files-side-panel.open{display:flex;flex-direction:column}
+.files-panel-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.1)}
+.files-panel-title{font-family:'Syne',sans-serif;font-weight:800;font-size:15px;flex:1}
+.files-panel-body{flex:1;overflow-y:auto;padding:14px;display:grid;gap:14px}
+.file-row{display:grid;grid-template-columns:58px minmax(0,1fr) 28px;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.035);padding:10px;min-height:74px}
+.file-row.pending{border-color:rgba(124,111,247,.45);background:rgba(124,111,247,.08)}
+.file-tilt{height:54px;border:1px solid rgba(255,255,255,.18);border-radius:8px;background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.02));display:grid;place-items:center;transform:rotate(-4deg);overflow:hidden}
+.file-tilt img{width:100%;height:100%;object-fit:cover}
+.file-ext{font-family:'DM Mono',monospace;font-size:10px;color:#b8b8b1;font-weight:800}
+.file-title{font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-meta{font-family:'DM Mono',monospace;color:#a5a49d;font-size:11px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-download{border:0;background:transparent;color:#b8b8b1;cursor:pointer;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:16px}
+.file-download:hover{background:rgba(255,255,255,.08);color:#fff}
+.files-content-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.files-content-card{min-height:118px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:#f7f7f3;color:#191919;overflow:hidden;font-size:10px;line-height:1.35;position:relative}
+.files-content-card img{width:100%;height:100%;object-fit:cover;display:block}
+.files-content-card pre{margin:0;padding:10px;white-space:pre-wrap;font-family:'DM Mono',monospace;color:#333;max-height:138px;overflow:hidden}
+.files-empty{border:1px dashed rgba(255,255,255,.16);border-radius:12px;padding:22px;text-align:center;color:#a5a49d;font-size:13px}
+.account-popover{position:fixed;z-index:520;width:min(306px,calc(100vw - 24px));display:none;background:#2a2a28;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:10px;box-shadow:0 18px 60px rgba(0,0,0,.45);color:#d6d3cd}
+.account-popover.show{display:block}
+.account-head{display:flex;gap:10px;align-items:center;padding:8px 8px 10px}
+.account-head-avatar{width:38px;height:38px;border-radius:50%;background:#d7d9d5;color:#1c1c1a;display:grid;place-items:center;font-weight:800}
+.account-name{font-weight:800;color:#f3f1eb;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.account-email{font-size:12px;color:#a9a69e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.account-row{width:100%;border:0;background:transparent;color:#d6d3cd;border-radius:8px;padding:9px 8px;display:flex;align-items:center;gap:10px;cursor:pointer;font:inherit;text-align:left}
+.account-row:hover{background:rgba(255,255,255,.08);color:#fff}
+.account-row .ar-icon{width:20px;text-align:center;color:#d6d3cd}
+.account-row .ar-text{flex:1;font-weight:700;font-size:13px}
+.account-row .ar-meta{font-family:'DM Mono',monospace;font-size:10px;color:#a9a69e}
+.account-sep{height:1px;background:rgba(255,255,255,.12);margin:6px 8px}
 .chat-header .chat-toggle{display:none!important}
 
 /* ── Workspace header ── */
@@ -507,6 +555,26 @@ body.light .attach-sub,
 body.light .tool-card .tool-desc,
 body.light .tool-card .tool-state{color:var(--muted)!important}
 body.light .tool-card.active .tool-state{color:#047857!important}
+body.light .files-top-btn{background:var(--s)!important;border-color:var(--b)!important;color:var(--text)!important}
+body.light .files-top-btn:hover,
+body.light .files-top-btn.active{background:#eef1ff!important;border-color:var(--accent)!important;color:var(--accent)!important}
+body.light .files-side-panel{background:rgba(255,255,255,.96)!important;border-color:var(--b)!important;color:var(--text)!important;box-shadow:0 24px 70px rgba(16,24,40,.18)}
+body.light .files-panel-head,
+body.light .file-row{border-color:var(--b)!important}
+body.light .file-row{background:#f8f9fd!important}
+body.light .file-row.pending{border-color:var(--accent)!important;background:#eef1ff!important}
+body.light .file-tilt{background:#fff!important;border-color:var(--b)!important}
+body.light .file-meta,
+body.light .file-ext,
+body.light .file-download,
+body.light .files-empty{color:var(--muted)!important}
+body.light .account-popover{background:#fff!important;border-color:var(--b)!important;color:var(--text)!important;box-shadow:0 18px 60px rgba(16,24,40,.18)}
+body.light .account-name{color:var(--text)!important}
+body.light .account-email,
+body.light .account-row .ar-meta{color:var(--muted)!important}
+body.light .account-row{color:var(--text)!important}
+body.light .account-row:hover{background:#eef1ff!important;color:var(--accent)!important}
+body.light .account-sep{background:var(--b)!important}
 body.light .input,
 body.light select.input,
 body.light textarea.input{background:#fff!important;border-color:var(--b)!important;color:var(--text)!important;box-shadow:0 1px 2px rgba(16,24,40,.03)}
@@ -665,8 +733,8 @@ try {
     <!-- User footer -->
     <div style="border-top:1px solid #1a1a30;padding:12px">
       <div style="display:flex;align-items:center;gap:8px">
-        <div style="width:32px;height:32px;flex-shrink:0;border-radius:50%;background:linear-gradient(135deg,#7c6ff7,#4338ca);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;cursor:pointer" id="user-avatar" onclick="navigate('settings')">?</div>
-        <div style="flex:1;min-width:0;cursor:pointer" onclick="navigate('settings')">
+        <div style="width:32px;height:32px;flex-shrink:0;border-radius:50%;background:linear-gradient(135deg,#7c6ff7,#4338ca);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;cursor:pointer" id="user-avatar" onclick="toggleAccountMenu(event)">?</div>
+        <div style="flex:1;min-width:0;cursor:pointer" onclick="toggleAccountMenu(event)">
           <div id="user-name" style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">User</div>
           <span id="user-plan" class="badge badge-free" style="font-size:10px">free</span>
         </div>
@@ -689,9 +757,14 @@ try {
   </div>
 
   <div class="main" id="main-content"></div>
+  <div class="files-right-rail" id="files-right-rail">
+    <button class="files-top-btn" id="files-rail-btn" onclick="toggleFilesPanel()" title="Open files sidebar" aria-label="Open files sidebar"><span class="file-doc-icon"></span><span class="files-dot" id="files-rail-dot"></span></button>
+  </div>
+  <aside class="files-side-panel" id="files-side-panel" aria-label="Files sidebar"></aside>
 </div>
 
 <div id="modal-container"></div>
+<div id="account-popover" class="account-popover"></div>
 <div id="toasts" style="position:fixed;bottom:20px;right:16px;z-index:500;display:flex;flex-direction:column;gap:8px;max-width:calc(100vw - 32px)"></div>
 <div id="notif-panel" class="notif-panel">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -928,7 +1001,7 @@ const S = {
   ws: null, wsRetry: 0,
   recording: false, mediaRec: null, audioChunks: [], voiceMode: false,
   liveVoiceRoom: null, liveVoiceTrack: null, liveVoiceSession: null, liveVoiceConnected: false,
-  usage: null, pendingImage: null, pendingAttachments: [],
+  usage: null, pendingImage: null, pendingAttachments: [], fileLibrary: [], filesPanelOpen: false,
   chatQueue: [], queueRunning: false,
   chatSearchOpen: false, chatSearchQuery: '', chatSearchResults: [], chatSearchTimer: null, chatSearchLoading: false,
   lastTokens: { input:0, output:0, total:0 },
@@ -977,6 +1050,9 @@ function loadSaved() {
       localStorage.setItem('jazz_web_default_active_v1', '1');
     }
   } catch(e) {}
+  try {
+    S.fileLibrary = JSON.parse(localStorage.getItem('jazz_file_library') || '[]').slice(0, 80);
+  } catch(e) { S.fileLibrary = []; }
 }
 function saveToolPrefs() {
   localStorage.setItem('jazz_tool_prefs', JSON.stringify({
@@ -984,6 +1060,9 @@ function saveToolPrefs() {
     selectedConnectorIds:S.selectedConnectorIds,
     selectedSkillIds:S.selectedSkillIds, selectedMcpTools:S.selectedMcpTools
   }));
+}
+function saveFileLibrary() {
+  try { localStorage.setItem('jazz_file_library', JSON.stringify((S.fileLibrary || []).slice(0, 80))); } catch(e) {}
 }
 
 // ═══════════════════════════════════════════════
@@ -1166,6 +1245,8 @@ async function doAuth() {
 }
 async function doLogout() {
   if (S.refresh) await post('/auth/logout', { refresh_token: S.refresh }).catch(() => {});
+  closeAccountMenu();
+  closeFilesPanel();
   S.token = null; S.refresh = null; S.user = null;
   ['jazz_token','jazz_refresh','jazz_user'].forEach(k => localStorage.removeItem(k));
   if (S.ws) S.ws.close();
@@ -1244,6 +1325,7 @@ function showApp() {
   loadModels().then(() => navigate('chat'));
   loadConnectedApps();
   renderThemeToggle();
+  updateFilesBadge();
 }
 
 async function loadModels() {
@@ -1444,6 +1526,8 @@ async function chat({ sessionId } = {}) {
         <span class="ctx-label">Context</span>
         <span id="context-mini">0%</span>
       </button>
+      <button class="files-top-btn" id="files-header-btn" onclick="toggleFilesPanel()" title="Open files sidebar" aria-label="Open files sidebar"><span class="file-doc-icon"></span><span class="files-dot" id="files-header-dot"></span></button>
+      <button class="btn btn-ghost btn-sm" onclick="shareSession()" title="Share chat" style="font-weight:700">Share</button>
       <button class="btn btn-ghost btn-sm" onclick="exportSession()" title="Export">↓</button>
     </div>
 
@@ -1507,7 +1591,7 @@ async function chat({ sessionId } = {}) {
             </label>
             <!-- Voice -->
             <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" title="Voice input">🎙</button>
-            <button class="voice-btn" id="live-voice-btn" onclick="openLiveVoice()" title="Live voice mode">&#128266;</button>
+            <button class="voice-btn" id="live-voice-btn" onclick="openLiveVoice()" title="Use voice mode" aria-label="Use voice mode"><span class="voice-wave-icon"><i></i><i></i><i></i><i></i><i></i></span></button>
             <button class="btn btn-ghost btn-sm tools-summary" id="tools-btn" onclick="openToolsDrawer()" title="Tools">Tools <span id="tools-count" class="badge badge-info" style="font-size:9px">0</span></button>
             <!-- Model pill -->
             <div class="model-pill" id="model-pill" onclick="toggleModelDropdown(event)" title="Select model">
@@ -1530,6 +1614,7 @@ async function chat({ sessionId } = {}) {
   updateModelPill();
   renderConnQuickBar();
   updateToolsCount();
+  updateFilesBadge();
   await loadSessions();
   if (sessionId) { S.forceFreshChat = false; loadSession(sessionId); }
   else if (S.forceFreshChat) {
@@ -2265,6 +2350,8 @@ function addPendingFiles(files = []) {
   if (!accepted.length) return;
   S.pendingAttachments = [...(S.pendingAttachments || []), ...accepted].slice(0, 12);
   renderAttachmentTray();
+  updateFilesBadge();
+  if (S.filesPanelOpen) renderFilesPanel();
   toast(`${accepted.length} file${accepted.length>1?'s':''} attached`, 'info');
 }
 function attachFiles(input) {
@@ -2281,12 +2368,16 @@ function removeAttachment(id) {
   });
   S.pendingAttachments = next;
   renderAttachmentTray();
+  updateFilesBadge();
+  if (S.filesPanelOpen) renderFilesPanel();
 }
 function clearAttachments() {
   (S.pendingAttachments || []).forEach(att => { if (att.previewUrl) URL.revokeObjectURL(att.previewUrl); });
   S.pendingAttachments = [];
   S.pendingImage = null;
   renderAttachmentTray();
+  updateFilesBadge();
+  if (S.filesPanelOpen) renderFilesPanel();
   const bar = document.getElementById('img-preview-bar'); if (bar) bar.style.display = 'none';
 }
 function removeImage() { clearAttachments(); }
@@ -2417,6 +2508,8 @@ function submitChat() {
   S.pendingAttachments = [];
   S.pendingImage = null;
   renderAttachmentTray();
+  updateFilesBadge();
+  if (S.filesPanelOpen) renderFilesPanel();
   const bar = document.getElementById('img-preview-bar'); if (bar) bar.style.display = 'none';
   if (S.streaming) {
     S.chatQueue.push({ id: 'q_'+Date.now()+'_'+Math.random().toString(36).slice(2), msg, attachments });
@@ -2449,6 +2542,7 @@ async function _sendChatInternal(msg, attachments = []) {
   let imgData = null;
   if (localAttachments.length) {
     const preparedAttachments = await prepareAttachmentsForSend(localAttachments);
+    addFilesToLibrary(preparedAttachments);
     const attachmentContext = buildAttachmentContext(preparedAttachments);
     if (attachmentContext) apiMsg = `${msg}\n\n${attachmentContext}`;
     const firstImage = preparedAttachments.find(att => isImageFile(att) && att.dataUrl);
@@ -2671,6 +2765,214 @@ async function exportSession() {
 }
 
 // ── Voice ──
+async function shareSession() {
+  const title = document.getElementById('chat-title')?.textContent?.trim() || 'JAZZ chat';
+  const data = { title, text: `Shared from JAZZ AI: ${title}`, url: location.href };
+  try {
+    if (navigator.share) await navigator.share(data);
+    else {
+      await navigator.clipboard.writeText(data.url);
+      toast('Share link copied', 'ok');
+    }
+  } catch(e) {
+    if (!/abort/i.test(e.message || '')) toast('Share failed', 'err');
+  }
+}
+function updateFilesBadge() {
+  const count = (S.pendingAttachments?.length || 0) + (S.fileLibrary?.length || 0);
+  ['files-rail-dot','files-header-dot'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = count ? 'block' : 'none';
+  });
+  ['files-rail-btn','files-header-btn'].forEach(id => document.getElementById(id)?.classList.toggle('active', !!S.filesPanelOpen));
+}
+function addFilesToLibrary(files = []) {
+  const records = (files || []).map(att => {
+    const up = att.uploaded || {};
+    const transcript = String(att.transcript?.transcript || '').trim();
+    const preview = String(up.text_preview || '').trim();
+    const imageData = isImageFile(att) && att.dataUrl && att.dataUrl.length < 900000 ? att.dataUrl : '';
+    return {
+      id: 'file_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+      name: att.name || up.original || 'attachment',
+      type: att.type || 'application/octet-stream',
+      size: att.size || up.size || 0,
+      stored: up.filename || '',
+      preview: preview.slice(0, 2400),
+      transcript: transcript.slice(0, 2400),
+      imageData,
+      sessionId: S.activeSession || '',
+      createdAt: Date.now()
+    };
+  });
+  if (!records.length) return;
+  S.fileLibrary = [...records, ...(S.fileLibrary || [])].slice(0, 80);
+  saveFileLibrary();
+  updateFilesBadge();
+  if (S.filesPanelOpen) renderFilesPanel();
+}
+function fileRowHtml(file, pending = false) {
+  const image = file.previewUrl || file.imageData || '';
+  const thumb = image ? `<img src="${escAttr(image)}" alt="">` : `<span class="file-ext">${escHtml(attachmentExt(file.name, file.type))}</span>`;
+  const sub = `${fmtFileSize(file.size)} / ${file.type || 'file'}${pending ? ' / pending' : file.stored ? ' / uploaded' : ''}`;
+  return `<div class="file-row ${pending?'pending':''}">
+    <div class="file-tilt">${thumb}</div>
+    <div style="min-width:0">
+      <div class="file-title">${escHtml(file.name)}</div>
+      <div class="file-meta">${escHtml(sub)}</div>
+    </div>
+    <button class="file-download" onclick="downloadFileRecord('${escAttr(file.id)}')" title="Download preview" aria-label="Download preview">⇩</button>
+  </div>`;
+}
+function renderFilesPanel() {
+  const panel = document.getElementById('files-side-panel');
+  if (!panel) return;
+  const pending = (S.pendingAttachments || []).map(f => ({ ...f, pending:true }));
+  const files = [...pending, ...(S.fileLibrary || [])];
+  const content = files.filter(f => f.previewUrl || f.imageData || f.preview || f.transcript).slice(0, 8);
+  panel.innerHTML = `
+    <div class="files-panel-head">
+      <button class="files-top-btn active" onclick="closeFilesPanel()" title="Close files sidebar" aria-label="Close files sidebar"><span class="file-doc-icon"></span></button>
+      <div class="files-panel-title">Files</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('files-panel-picker').click()">Add</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeFilesPanel()">×</button>
+      <input id="files-panel-picker" type="file" multiple style="display:none" onchange="attachFiles(this)">
+    </div>
+    <div class="files-panel-body">
+      ${files.length ? files.map(f => fileRowHtml(f, !!f.pending)).join('') : '<div class="files-empty">Attach CSV, Excel, PPT, PDF, zip, audio, video, or images and they will appear here.</div>'}
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <b style="font-size:14px">Content</b>
+        ${S.fileLibrary?.length ? '<button class="btn btn-ghost btn-xs" onclick="clearFileLibrary()">Clear</button>' : ''}
+      </div>
+      ${content.length ? `<div class="files-content-grid">${content.map(f => {
+        const image = f.previewUrl || f.imageData || '';
+        if (image) return `<div class="files-content-card"><img src="${escAttr(image)}" alt=""></div>`;
+        const text = f.transcript || f.preview || `${f.name}\n${f.type || ''}`;
+        return `<div class="files-content-card"><pre>${escHtml(text.slice(0, 700))}</pre></div>`;
+      }).join('')}</div>` : '<div class="files-empty">Readable previews, image thumbnails, and audio transcripts will show here.</div>'}
+    </div>`;
+}
+function toggleFilesPanel() { S.filesPanelOpen ? closeFilesPanel() : openFilesPanel(); }
+function openFilesPanel() {
+  S.filesPanelOpen = true;
+  renderFilesPanel();
+  document.getElementById('files-side-panel')?.classList.add('open');
+  updateFilesBadge();
+}
+function closeFilesPanel() {
+  S.filesPanelOpen = false;
+  document.getElementById('files-side-panel')?.classList.remove('open');
+  updateFilesBadge();
+}
+function clearFileLibrary() {
+  if (!confirm('Clear recent files from this browser?')) return;
+  S.fileLibrary = [];
+  saveFileLibrary();
+  renderFilesPanel();
+  updateFilesBadge();
+}
+function downloadFileRecord(id) {
+  const file = [...(S.pendingAttachments || []), ...(S.fileLibrary || [])].find(f => f.id === id);
+  if (!file) return;
+  const href = file.previewUrl || file.imageData || '';
+  const a = document.createElement('a');
+  a.download = file.name || 'jazz-file';
+  if (href) a.href = href;
+  else if (file.preview || file.transcript) {
+    a.href = URL.createObjectURL(new Blob([file.transcript || file.preview], { type:'text/plain' }));
+    a.download = `${file.name || 'file'}-preview.txt`;
+  } else {
+    toast(file.stored ? `Stored on server as ${file.stored}` : 'No local preview to download', 'info');
+    return;
+  }
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  if (a.href.startsWith('blob:') && !file.previewUrl) setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+let _accountOutsideHandler = null;
+function accountInitial() { return (S.user?.full_name || S.user?.email || 'J')[0].toUpperCase(); }
+function renderAccountMenu() {
+  const u = S.user || {};
+  const plan = u.subscription || 'free';
+  return `<div class="account-head">
+    <div class="account-head-avatar">${escHtml(accountInitial())}</div>
+    <div style="min-width:0">
+      <div class="account-name">${escHtml(u.full_name || 'JAZZ user')}</div>
+      <div class="account-email">${escHtml(u.email || '')}</div>
+    </div>
+  </div>
+  <button class="account-row" onclick="closeAccountMenu();navigate('settings')"><span class="ar-icon">⚙</span><span class="ar-text">Settings</span><span class="ar-meta">profile</span></button>
+  <button class="account-row" onclick="upgradePlan()"><span class="ar-icon">⇧</span><span class="ar-text">Upgrade plan</span><span class="ar-meta">${escHtml(plan)}</span></button>
+  <button class="account-row" onclick="openLanguageMenu()"><span class="ar-icon">◎</span><span class="ar-text">Language</span><span class="ar-meta">${escHtml(localStorage.getItem('jazz_language_pref') || 'Auto')}</span></button>
+  <button class="account-row" onclick="openHelpMenu()"><span class="ar-icon">?</span><span class="ar-text">Get help</span></button>
+  <button class="account-row" onclick="openLearnMore()"><span class="ar-icon">i</span><span class="ar-text">Learn more</span><span class="ar-meta">features</span></button>
+  <div class="account-sep"></div>
+  <button class="account-row" onclick="doLogout()"><span class="ar-icon">↪</span><span class="ar-text">Log out</span></button>`;
+}
+function toggleAccountMenu(event) {
+  event?.stopPropagation();
+  const pop = document.getElementById('account-popover');
+  if (!pop) return;
+  if (pop.classList.contains('show')) { closeAccountMenu(); return; }
+  pop.innerHTML = renderAccountMenu();
+  const anchor = event?.currentTarget || document.getElementById('user-avatar');
+  const rect = anchor?.getBoundingClientRect();
+  const left = Math.max(8, Math.min(rect?.left || 12, window.innerWidth - 318));
+  const bottom = Math.max(12, window.innerHeight - (rect?.top || window.innerHeight - 70) + 8);
+  pop.style.left = `${left}px`;
+  pop.style.bottom = `${bottom}px`;
+  pop.style.top = 'auto';
+  pop.classList.add('show');
+  _accountOutsideHandler = e => {
+    if (!pop.contains(e.target) && !document.getElementById('user-avatar')?.contains(e.target)) closeAccountMenu();
+  };
+  setTimeout(() => document.addEventListener('click', _accountOutsideHandler), 0);
+}
+function closeAccountMenu() {
+  const pop = document.getElementById('account-popover');
+  if (pop) pop.classList.remove('show');
+  if (_accountOutsideHandler) document.removeEventListener('click', _accountOutsideHandler);
+  _accountOutsideHandler = null;
+}
+function upgradePlan() {
+  closeAccountMenu();
+  navigate('settings');
+  setTimeout(() => settingsTab('usage', document.querySelectorAll('#main-content .tab')[2]), 0);
+}
+function openLanguageMenu() {
+  closeAccountMenu();
+  const langs = ['Auto','Hindi / Hinglish','English','Spanish','French','German','Japanese','Korean'];
+  openModal(`<div class="modal" style="width:420px">
+    <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:12px">Language</div>
+    <div style="display:grid;gap:8px">${langs.map(l => `<button class="btn btn-ghost" style="justify-content:space-between" onclick="setLanguagePref('${escAttr(l)}')">${escHtml(l)} <span>›</span></button>`).join('')}</div>
+  </div>`);
+}
+function setLanguagePref(lang) {
+  localStorage.setItem('jazz_language_pref', lang);
+  closeModal();
+  toast(`Language set to ${lang}`, 'ok');
+}
+function openHelpMenu() {
+  closeAccountMenu();
+  openModal(`<div class="modal" style="width:460px">
+    <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:8px">Get help</div>
+    <div style="color:#9090b0;line-height:1.55;font-size:13px">Use the paperclip or files shelf for attachments, Tools HUD for web/RAG/apps, and Live Voice for Jarvis mode. For account or billing issues, use Settings → Usage.</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>
+  </div>`);
+}
+function openLearnMore() {
+  closeAccountMenu();
+  openModal(`<div class="modal" style="width:500px">
+    <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:10px">Learn more</div>
+    <div style="display:grid;gap:10px;color:#9090b0;font-size:13px;line-height:1.5">
+      <div><b style="color:#e4e4f4">Files shelf</b><br>Tracks recent uploads, text previews, image thumbnails, and audio transcripts.</div>
+      <div><b style="color:#e4e4f4">Tools HUD</b><br>Web search stays active by default, with RAG, apps, skills, and MCP available as cards.</div>
+      <div><b style="color:#e4e4f4">Voice mode</b><br>The waveform button opens the LiveKit Jarvis-style voice HUD.</div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn btn-primary" onclick="closeModal()">Close</button></div>
+  </div>`);
+}
 async function toggleVoice() {
   if (!S.recording) {
     try {
