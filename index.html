@@ -7,7 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link id="hljs-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<link id="hljs-theme-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script>
@@ -402,9 +403,138 @@ select.input{cursor:pointer;appearance:none}
 .page-back-btn:hover{border-color:#7c6ff7;color:#fff;background:#15152a}
 .workspace-header .page-icon{font-size:18px}
 .workspace-header .page-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:700}
+
+/* Theme repair layer: keeps older inline dark surfaces readable in light mode. */
+:root{color-scheme:dark}
+body.light{color-scheme:light}
+body.light #login-page{background:radial-gradient(ellipse at 50% -12%, #ecebff 0%, #f7f8fc 58%, #eef1f7 100%)!important}
+body.light #app,
+body.light .main{background:var(--bg);color:var(--text)}
+body.light .sidebar,
+body.light .card,
+body.light .modal,
+body.light .notif-panel,
+body.light .model-dropdown,
+body.light #slash-palette,
+body.light #queue-panel,
+body.light .workspace-header,
+body.light .chat-header{background:var(--s)!important;border-color:var(--b)!important;color:var(--text)!important;box-shadow:0 10px 32px rgba(16,24,40,.08)}
+body.light .sidebar{box-shadow:1px 0 0 var(--b)}
+body.light .section-title,
+body.light .workspace-header .page-title,
+body.light .conn-card .conn-name,
+body.light .msg-ai h1,
+body.light .msg-ai h2,
+body.light .msg-ai h3{color:var(--text)}
+body.light .nav-item,
+body.light .session-item,
+body.light .tab,
+body.light .model-pill,
+body.light .context-chip,
+body.light .token-bar,
+body.light .conn-card .conn-desc,
+body.light .notif-empty,
+body.light .queue-item,
+body.light .slash-item .si-desc{color:var(--muted)}
+body.light .nav-item:hover,
+body.light .nav-item.active,
+body.light .session-item:hover,
+body.light .session-item.active,
+body.light .tab.active,
+body.light .model-opt:hover,
+body.light .model-opt.selected,
+body.light .slash-item:hover,
+body.light .slash-item.active{background:#eef1ff!important;color:var(--accent)!important}
+body.light .sidebar-new-chat,
+body.light .queue-item,
+body.light .model-pill,
+body.light .context-chip,
+body.light .cat-chip,
+body.light .oauth-step,
+body.light .mcp-card,
+body.light .mcp-tool,
+body.light .agent-step,
+body.light .tool-event,
+body.light .thinking-block{background:var(--s2)!important;border-color:var(--b)!important;color:var(--text)}
+body.light .btn-ghost,
+body.light .voice-btn,
+body.light .page-back-btn{background:var(--s)!important;border-color:var(--b)!important;color:var(--muted)!important}
+body.light .btn-ghost:hover,
+body.light .voice-btn:hover,
+body.light .page-back-btn:hover{background:#eef1ff!important;border-color:var(--accent)!important;color:var(--accent)!important}
+body.light .input,
+body.light select.input,
+body.light textarea.input{background:#fff!important;border-color:var(--b)!important;color:var(--text)!important;box-shadow:0 1px 2px rgba(16,24,40,.03)}
+body.light .input::placeholder{color:#9aa0b7}
+body.light .msg-user{background:#eef1ff!important;border-color:#d7dcf3!important;color:#181827!important}
+body.light .msg-user summary,
+body.light .msg-user pre{color:#181827}
+body.light .msg-ai{color:#1f2333}
+body.light .msg-ai pre,
+body.light .msg-ai code:not(pre code){background:#f6f7fb!important;border-color:#d9deef!important;color:#1f2333!important}
+body.light .msg-ai th{background:#eef1ff!important}
+body.light .msg-ai th,
+body.light .msg-ai td,
+body.light .msg-user img,
+body.light #img-preview-bar img{border-color:var(--b)!important}
+body.light .msg-ai blockquote{color:var(--muted);border-left-color:var(--accent)}
+body.light .msg-tool{background:#f1f7ff!important;border-color:#bfdbfe!important;color:#1d4ed8!important}
+body.light .copy-btn{background:#e6e9f5!important;color:var(--muted)!important}
+body.light .copy-btn:hover{background:var(--accent)!important;color:#fff!important}
+body.light .badge-free{background:#eceff7;color:#667085}
+body.light .badge-pro{background:#eef1ff;color:#5b4fe8}
+body.light .badge-enterprise{background:#fff7dc;color:#a16207}
+body.light .badge-ok{background:#dcfce7;color:#047857}
+body.light .badge-err{background:#fee2e2;color:#dc2626}
+body.light .badge-warn{background:#fef3c7;color:#b45309}
+body.light .badge-info{background:#dbeafe;color:#2563eb}
+body.light .badge-tool{background:#f3e8ff;color:#7e22ce}
+body.light .conn-card{background:var(--s)!important;border-color:var(--b)!important;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+body.light .conn-card:hover{background:#fafbff!important;border-color:var(--b2)!important}
+body.light .conn-card.connected{border-color:#22c55e!important;box-shadow:0 0 0 1px rgba(34,197,94,.12)}
+body.light .context-ring::after{background:var(--s)}
+body.light .tok-ctx-bar,
+body.light .progress-bar{background:#e3e7f4!important}
+body.light ::-webkit-scrollbar-thumb{background:#c5cbdd}
+body.light ::-webkit-scrollbar-thumb:hover{background:#aeb6ce}
+
+body.light [style*="background:#07070f"],
+body.light [style*="background:#0c0c1a"],
+body.light [style*="background:#080812"],
+body.light [style*="background:#0a0a16"],
+body.light [style*="background:#0d0d20"],
+body.light [style*="background:#0f0f20"]{background:var(--s)!important}
+body.light [style*="background:#111124"],
+body.light [style*="background:#131328"],
+body.light [style*="background:#1a1a30"],
+body.light [style*="background:#252540"]{background:var(--s2)!important}
+body.light [style*="border:1px solid #1a1a30"],
+body.light [style*="border:1px solid #252540"],
+body.light [style*="border:2px dashed #252540"]{border-color:var(--b)!important}
+body.light [style*="border-top:1px solid #1a1a30"]{border-top-color:var(--b)!important}
+body.light [style*="border-bottom:1px solid #1a1a30"]{border-bottom-color:var(--b)!important}
+body.light [style*="color:#e4e4f4"],
+body.light [style*="color:#e2e2e8"],
+body.light [style*="color:#c9c9e8"]{color:var(--text)!important}
+body.light [style*="color:#9090b0"]{color:var(--muted)!important}
+body.light [style*="color:#4a4a6a"],
+body.light [style*="color:#252540"]{color:var(--dim)!important}
+body.light [style*="box-shadow:0 4px 16px rgba(0,0,0,.4)"]{box-shadow:0 8px 24px rgba(16,24,40,.12)!important}
+
+body.light .modal-bg{background:rgba(248,250,252,.72)!important;backdrop-filter:blur(10px)}
+body.light .live-voice-modal{background:#05070d!important;border-color:#1c3352!important;color:#dbeafe!important;box-shadow:0 24px 80px rgba(16,24,40,.28),0 0 48px rgba(45,212,191,.1)}
+body.light .live-voice-shell{background:linear-gradient(135deg,rgba(13,20,34,.96),rgba(5,7,13,.98) 58%,rgba(8,16,28,.96)),repeating-linear-gradient(0deg,rgba(125,249,255,.04) 0,rgba(125,249,255,.04) 1px,transparent 1px,transparent 16px)!important}
 </style>
 </head>
 <body>
+<script>
+try {
+  const initialTheme = localStorage.getItem('jazz_theme') === 'light' ? 'light' : 'dark';
+  document.body.classList.toggle('light', initialTheme === 'light');
+  document.documentElement.dataset.theme = initialTheme;
+  document.documentElement.style.colorScheme = initialTheme;
+} catch(e) {}
+</script>
 
 <!-- ════════════════ LOGIN ════════════════ -->
 <div id="login-page" style="display:flex;align-items:center;justify-content:center;height:100vh;background:radial-gradient(ellipse at 50% -10%, #1a0f3a 0%, #07070f 55%)">
@@ -777,11 +907,12 @@ function loadSaved() {
   S.token   = localStorage.getItem('jazz_token');
   S.refresh = localStorage.getItem('jazz_refresh');
   try { S.user = JSON.parse(localStorage.getItem('jazz_user') || 'null'); } catch(e) {}
-  // Apply persisted theme (class only here; icon updated by renderThemeToggle after DOM render)
+  // Apply persisted theme (button state is refreshed after app chrome renders).
   const savedTheme = localStorage.getItem('jazz_theme');
-  if (savedTheme === 'light') {
-    document.body.classList.add('light');
-  }
+  const theme = savedTheme === 'light' ? 'light' : 'dark';
+  document.body.classList.toggle('light', theme === 'light');
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
   try {
     const prefs = JSON.parse(localStorage.getItem('jazz_tool_prefs') || '{}');
     if (typeof prefs.useRag === 'boolean') S.useRag = prefs.useRag;
@@ -880,11 +1011,18 @@ function toggleNotifPanel() {
 }
 function renderThemeToggle() {
   const btn = document.getElementById('theme-toggle-btn');
-  if (btn) btn.textContent = document.body.classList.contains('light') ? '☀️' : '🌙';
+  if (!btn) return;
+  const isLight = document.body.classList.contains('light');
+  btn.textContent = isLight ? '☀️' : '🌙';
+  btn.title = isLight ? 'Switch to dark mode' : 'Switch to light mode';
+  btn.setAttribute('aria-label', btn.title);
+  btn.setAttribute('aria-pressed', String(isLight));
 }
 function toggleTheme() {
   const isLight = document.body.classList.toggle('light');
   localStorage.setItem('jazz_theme', isLight ? 'light' : 'dark');
+  document.documentElement.dataset.theme = isLight ? 'light' : 'dark';
+  document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
   renderThemeToggle();
 }
 function renderNotifPanel() {
@@ -1051,6 +1189,7 @@ function showApp() {
   loadSidebarFeatureAccess();
   loadModels().then(() => navigate('chat'));
   loadConnectedApps();
+  renderThemeToggle();
 }
 
 async function loadModels() {
