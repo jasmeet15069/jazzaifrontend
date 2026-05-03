@@ -155,6 +155,11 @@ body:not(.light) #hljs-theme-light{display:none}
 .btn-success{background:transparent;color:#34d399;border:1px solid #34d399}.btn-success:hover{background:#34d399;color:#fff}
 .btn-sm{padding:5px 10px;font-size:12px;border-radius:6px}
 .btn-xs{padding:3px 8px;font-size:11px;border-radius:5px}
+.composer-send-stack{display:flex;align-items:stretch;gap:6px;width:min(300px,42vw);min-width:190px;flex-shrink:0}
+.composer-send-stack .send-primary{flex:1 1 80%;min-width:0}
+#stop-chat-btn{flex:0 0 20%;min-width:48px;padding:7px 10px;justify-content:center}
+.stop-orb{width:15px;height:15px;border-radius:50%;display:inline-block;background:radial-gradient(circle at 35% 35%,#fff 0 10%,#ffb4b4 18%,#ef4444 48%,#7f1d1d 78%);box-shadow:0 0 0 1px rgba(248,113,113,.35),0 0 16px rgba(248,113,113,.65);animation:stopSpin .78s linear infinite}
+@keyframes stopSpin{to{transform:rotate(360deg)}}
 
 /* ── Inputs ── */
 .input{width:100%;background:#0c0c1a;border:1px solid #1a1a30;color:#e4e4f4;padding:9px 12px;border-radius:8px;font-size:13.5px;font-family:'Outfit',sans-serif;outline:none;transition:.2s}
@@ -412,6 +417,7 @@ select.input{cursor:pointer;appearance:none}
   .context-chip{padding:5px 7px;font-size:11px}
   .context-chip .ctx-label{display:none}
   #conn-quick-bar{max-width:100%;overflow-x:auto;padding-bottom:2px}
+  .composer-send-stack{width:100%;min-width:0}
   .send-btn{width:100%;justify-content:center !important;min-height:42px}
   #slash-palette{max-height:45svh}
   .cat-chip{padding:7px 12px;font-size:12px}
@@ -1743,12 +1749,14 @@ async function chat({ sessionId } = {}) {
               <span style="font-size:9px;color:#4a4a6a;margin-left:2px">▾</span>
             </div>
           </div>
-          <button class="btn btn-danger send-btn" id="stop-chat-btn" style="display:none;padding:7px 14px;font-size:13px;justify-content:center;border-radius:10px;flex-shrink:0" onclick="stopChatGeneration()" title="Stop generating">
-            Stop
+          <div class="composer-send-stack">
+          <button class="btn btn-danger send-btn" id="stop-chat-btn" style="display:none" onclick="stopChatGeneration()" title="Stop generating" aria-label="Stop generating">
+            <span class="stop-orb" aria-hidden="true"></span>
           </button>
-          <button class="btn btn-primary send-btn" style="padding:7px 18px;font-size:13px;justify-content:center;border-radius:10px;flex-shrink:0" onclick="submitChat()">
+          <button class="btn btn-primary send-btn send-primary" style="padding:7px 18px;font-size:13px;justify-content:center;border-radius:10px" onclick="submitChat()">
             <span id="send-btn-label">Send ↗</span>
           </button>
+          </div>
         </div>
       </div>
     </div>
@@ -3143,6 +3151,10 @@ async function _sendChatInternal(msg, attachments = []) {
   function _onToolEvent(d) {
     if ((d.type === 'tool_start' && d.tool === 'slash') || (d.type === 'tool_result' && d.tool && d.tool !== 'web_search')) {
       suppressLiveAssistant = true;
+    }
+    if (d.type === 'tool_result' && d.tool === 'latex' && d.file) {
+      addFilesToLibrary([{ ...d.file, generated:true }]);
+      if (!S.filesPanelOpen) openFilesPanel();
     }
     if (d.type === 'model_switch' && d.selected && d.model_id) {
       activeModelId = d.model_id;

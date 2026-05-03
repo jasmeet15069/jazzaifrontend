@@ -5920,6 +5920,41 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
                 tool_log.append(ev)
                 yield f"data: {json.dumps(ev)}\n\n"
 
+            latex_req = _latex_compile_request_from_message(req.message)
+            if latex_req:
+                start_ev = {"type":"tool_start","tool":"latex","label":"Compiling LaTeX to PDF" if latex_req.output == "pdf" else "Preparing LaTeX source"}
+                tool_log.append(start_ev)
+                yield f"data: {json.dumps(start_ev)}\n\n"
+                result = await asyncio.get_running_loop().run_in_executor(_executor, _build_latex_artifact, latex_req, uid)
+                done_ev = {
+                    "type":"tool_result",
+                    "tool":"latex",
+                    "label":"LaTeX PDF ready" if result.get("compiled") is not False else "LaTeX PDF ready (interpreted fallback)",
+                    "count":1,
+                    "file":result,
+                }
+                tool_log.append(done_ev)
+                yield f"data: {json.dumps(done_ev)}\n\n"
+                elapsed = int((time.time()-t0)*1000)
+                now = _utcnow(); mid = _new_id()
+                reply = (
+                    f"Done - I created {result.get('original') or 'the PDF'} and added it to the Files panel."
+                    if result.get("compiled") is not False else
+                    f"Done - I created {result.get('original') or 'the PDF'} and added it to the Files panel. The server has no TeX engine installed, so this is an interpreted PDF fallback."
+                )
+                await db_execute(
+                    "INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,created_at) VALUES(?,?,?,'user',?,?,?)",
+                    (_new_id(), sid, uid, req.message, active_model_id, now))
+                await db_execute(
+                    "INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,latency_ms,tool_calls_json,mode,created_at)"
+                    " VALUES(?,?,?,'assistant',?,?,?,?,'tool',?)",
+                    (mid, sid, uid, reply, active_model_id, elapsed, json.dumps(tool_log), now))
+                await db_execute("UPDATE chat_sessions SET last_message_at=?,turn_count=turn_count+1,updated_at=? WHERE id=?",
+                                 (now, now, sid))
+                context = await _context_window_status(sid, uid, active_model_id)
+                yield f"data: {json.dumps({'type':'done','message_id':mid,'content':reply,'latency_ms':elapsed,'tokens':{'input':_count_tokens(req.message),'output':_count_tokens(reply)},'mode':'tool','context':context,'model_id':active_model_id,'model_label':await _model_display_name(active_model_id)})}\n\n"
+                return
+
             skills, skill_matches = await _select_skills_for_message(req.message, explicit_skill_ids)
             skill_context = _format_skill_context(skills)
             for i, skill in enumerate(skills):
@@ -9629,6 +9664,22 @@ def _build_latex_artifact(req: LatexCompileReq, user_id: str) -> Dict[str, Any]:
         "download_url": f"/files/download/{urllib.parse.quote(stored)}",
         **extra,
     }
+
+def _latex_compile_request_from_message(message: str) -> Optional[LatexCompileReq]:
+    text = message or ""
+    low = text.lower()
+    if not _looks_like_latex(text):
+        return None
+    if not re.search(r"\b(convert|compile|compiler|render|export|download|save|generate|create|make)\b", low):
+        return None
+    if not re.search(r"\b(pdf|latex|tex|overleaf)\b", low):
+        return None
+    output = "tex" if re.search(r"\b(tex|latex source|source file)\b", low) and "pdf" not in low else "pdf"
+    filename = None
+    m = re.search(r"(?:called|named|filename|file name|as)\s+[`\"']?([A-Za-z0-9][A-Za-z0-9._ -]{0,80}?\.(?:pdf|tex))", text, re.I)
+    if m:
+        filename = m.group(1).strip()
+    return LatexCompileReq(source=_extract_latex_source(text), filename=filename, output=output)
 
 @app.post("/latex/compile")
 async def compile_latex(req: LatexCompileReq, user: Dict = Depends(_get_current_user)):
