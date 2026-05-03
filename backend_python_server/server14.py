@@ -374,17 +374,17 @@ _PROVIDER_DEFAULTS: Dict[str,str] = {
 
 NVIDIA_KIMI_PROVIDER_FALLBACKS = {
     "moonshotai/kimi-k2.6": [
-        "moonshotai/kimi-k2.6",
-        "moonshotai/kimi-k2-thinking",
         "moonshotai/kimi-k2-instruct",
         "moonshotai/kimi-k2-instruct-0905",
+        "moonshotai/kimi-k2-thinking",
+        "moonshotai/kimi-k2.6",
     ],
 }
 NVIDIA_STREAM_TIMEOUTS = {
-    "moonshotai/kimi-k2.6": int(os.getenv("NVIDIA_KIMI_K26_TIMEOUT", "10")),
-    "moonshotai/kimi-k2-thinking": int(os.getenv("NVIDIA_KIMI_THINKING_TIMEOUT", "14")),
-    "moonshotai/kimi-k2-instruct": int(os.getenv("NVIDIA_KIMI_INSTRUCT_TIMEOUT", "30")),
-    "moonshotai/kimi-k2-instruct-0905": int(os.getenv("NVIDIA_KIMI_INSTRUCT_0905_TIMEOUT", "30")),
+    "moonshotai/kimi-k2-instruct": int(os.getenv("NVIDIA_KIMI_INSTRUCT_TIMEOUT", "28")),
+    "moonshotai/kimi-k2-instruct-0905": int(os.getenv("NVIDIA_KIMI_INSTRUCT_0905_TIMEOUT", "28")),
+    "moonshotai/kimi-k2-thinking": int(os.getenv("NVIDIA_KIMI_THINKING_TIMEOUT", "12")),
+    "moonshotai/kimi-k2.6": int(os.getenv("NVIDIA_KIMI_K26_TIMEOUT", "8")),
 }
 
 # â”€â”€ Style hints for website builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
