@@ -164,6 +164,9 @@ body:not(.light) #hljs-theme-light{display:none}
 .composer-send-stack{display:flex;align-items:stretch;gap:6px;width:min(300px,42vw);min-width:190px;flex-shrink:0}
 .composer-send-stack .send-primary{flex:1 1 80%;min-width:0}
 #stop-chat-btn{flex:0 0 20%;min-width:48px;padding:7px 10px;justify-content:center}
+.composer-send-stack.is-generating #stop-chat-btn{display:inline-flex!important}
+.composer-send-stack:not(.is-generating) #stop-chat-btn{display:none!important}
+.composer-send-stack.is-generating .send-primary{flex:1 1 80%!important}
 .stop-orb{width:15px;height:15px;border-radius:50%;display:inline-block;background:radial-gradient(circle at 35% 35%,#fff 0 10%,#ffb4b4 18%,#ef4444 48%,#7f1d1d 78%);box-shadow:0 0 0 1px rgba(248,113,113,.35),0 0 16px rgba(248,113,113,.65);animation:stopSpin .78s linear infinite}
 @keyframes stopSpin{to{transform:rotate(360deg)}}
 
@@ -428,6 +431,8 @@ select.input{cursor:pointer;appearance:none}
   .context-chip .ctx-label{display:none}
   #conn-quick-bar{max-width:100%;overflow-x:auto;padding-bottom:2px}
   .composer-send-stack{width:100%;min-width:0}
+  .composer-send-stack.is-generating #stop-chat-btn{width:auto!important;flex:0 0 20%!important;min-width:56px}
+  .composer-send-stack.is-generating .send-primary{width:auto!important;flex:1 1 80%!important}
   .send-btn{width:100%;justify-content:center !important;min-height:42px}
   #slash-palette{max-height:45svh}
   .cat-chip{padding:7px 12px;font-size:12px}
@@ -2987,6 +2992,7 @@ function dropComposerFiles(e) {
 // ── Queue ──
 function renderQueuePanel() {
   const panel = document.getElementById('queue-panel'), itemsEl = document.getElementById('queue-items'), badge = document.getElementById('queue-badge');
+  updateComposerGenerationState();
   if (!panel) return;
   if (badge) badge.textContent = S.chatQueue.length;
   if (!S.chatQueue.length) { panel.style.display = 'none'; return; }
@@ -3003,10 +3009,21 @@ function renderQueuePanel() {
   const stopBtn = document.getElementById('stop-chat-btn');
   if (stopBtn) stopBtn.style.display = S.streaming ? 'inline-flex' : 'none';
 }
+function updateComposerGenerationState() {
+  const btn = document.getElementById('send-btn-label');
+  if (btn) btn.textContent = (S.streaming ? 'Queue ' : 'Send ') + String.fromCharCode(8599);
+  const stopBtn = document.getElementById('stop-chat-btn');
+  if (stopBtn) {
+    stopBtn.style.display = S.streaming ? 'inline-flex' : 'none';
+    stopBtn.setAttribute('aria-hidden', S.streaming ? 'false' : 'true');
+  }
+  const stack = stopBtn?.closest?.('.composer-send-stack');
+  if (stack) stack.classList.toggle('is-generating', !!S.streaming);
+}
 function removeQueueItem(id) { S.chatQueue = S.chatQueue.filter(x => x.id !== id); renderQueuePanel(); }
 
 function stopChatGeneration() {
-  if (!S.streaming) return;
+  if (!S.streaming && !S.activeEventSource && !S.activeChatAbort && typeof S.activeChatStop !== 'function') return;
   S.stopRequested = true;
   try { S.activeEventSource?.close?.(); } catch(e) {}
   try { S.activeChatAbort?.abort?.(); } catch(e) {}
