@@ -1080,7 +1080,7 @@ function loadSaved() {
     }
   } catch(e) {}
   try {
-    S.fileLibrary = JSON.parse(localStorage.getItem('jazz_file_library') || '[]').slice(0, 80);
+    S.fileLibrary = dedupeFileRecords(JSON.parse(localStorage.getItem('jazz_file_library') || '[]')).slice(0, 80);
   } catch(e) { S.fileLibrary = []; }
 }
 function saveToolPrefs() {
@@ -1091,7 +1091,10 @@ function saveToolPrefs() {
   }));
 }
 function saveFileLibrary() {
-  try { localStorage.setItem('jazz_file_library', JSON.stringify((S.fileLibrary || []).slice(0, 80))); } catch(e) {}
+  try {
+    S.fileLibrary = dedupeFileRecords(S.fileLibrary || []).slice(0, 80);
+    localStorage.setItem('jazz_file_library', JSON.stringify(S.fileLibrary));
+  } catch(e) {}
 }
 
 // ═══════════════════════════════════════════════
@@ -2813,6 +2816,7 @@ async function _sendChatInternal(msg, attachments = []) {
   let liveToolEvents = [];
   let mode = 'normal';
   let suppressLiveAssistant = isToolSlashMessage(msg);
+  let generatedFileQueued = false;
 
   function _onDone(d) {
     requestCompleted = true;
@@ -2857,6 +2861,10 @@ async function _sendChatInternal(msg, attachments = []) {
     addCopyBtns(); hljs.highlightAll(); scrollBottom();
     updateTokenBar({ input:d.tokens?.input||0, output:d.tokens?.output||0, context:d.context });
     if (!d.context) setTimeout(loadContextStatus, 300);
+    if (!generatedFileQueued) {
+      generatedFileQueued = true;
+      maybeGenerateFileFromResponse(msg, displayText || full);
+    }
     loadSessions(); loadUsage(); renderQueuePanel(); _tryRunNextQueued();
   }
   function _onDelta(content) {
@@ -3062,8 +3070,80 @@ function updateFilesBadge() {
   });
   ['files-header-btn'].forEach(id => document.getElementById(id)?.classList.toggle('active', !!S.filesPanelOpen));
 }
+function fileRecordKey(file = {}) {
+  const localSig = ['local', file.name || file.original || '', file.type || file.mime || '', file.size || 0].join('|').toLowerCase();
+  if (!file.generated && (file.name || file.original) && Number(file.size || 0) > 0) return localSig;
+  const stored = String(file.stored || file.filename || '').trim().toLowerCase();
+  if (stored) return 'stored:' + stored;
+  const url = String(file.downloadUrl || file.download_url || file.previewUrl || '').trim().toLowerCase();
+  if (url) return 'url:' + url;
+  return localSig;
+}
+function dedupeFileRecords(files = []) {
+  const seen = new Set(), out = [];
+  for (const raw of files || []) {
+    if (!raw) continue;
+    const f = { ...raw };
+    f.key = f.key || fileRecordKey(f);
+    if (seen.has(f.key)) continue;
+    seen.add(f.key);
+    out.push(f);
+  }
+  return out;
+}
+function detectGeneratedFileRequest(text = '') {
+  const raw = String(text || '').trim();
+  const s = raw.toLowerCase();
+  if (!/\b(generate|create|make|export|download|save|build|prepare)\b/.test(s)) return null;
+  if (!/\b(file|pdf|excel|xlsx|spreadsheet|workbook|csv|text|txt|document|report)\b/.test(s)) return null;
+  let fileType = '';
+  if (/\b(excel|xlsx|spreadsheet|workbook)\b/.test(s)) fileType = 'xlsx';
+  else if (/\bcsv\b/.test(s)) fileType = 'csv';
+  else if (/\b(pdf|report|document)\b/.test(s)) fileType = 'pdf';
+  else if (/\b(text|txt)\b/.test(s)) fileType = 'txt';
+  else fileType = 'txt';
+  const nameMatch = raw.match(/(?:called|named|filename|file name|as)\s+["'`]?([A-Za-z0-9][A-Za-z0-9._ -]{0,80}?\.(?:pdf|xlsx|csv|txt))/i)
+    || raw.match(/(?:called|named|filename|file name|as)\s+["'`]?([A-Za-z0-9][A-Za-z0-9._ -]{1,80}?)(?=$|["'`,.!?:;]|\s+(?:with|for|from|about|containing|using|and)\b)/i);
+  return { file_type: fileType, filename: nameMatch?.[1]?.trim() || '' };
+}
+async function maybeGenerateFileFromResponse(userPrompt, assistantText) {
+  const intent = detectGeneratedFileRequest(userPrompt);
+  const content = String(assistantText || '').trim();
+  if (!intent || !content || content.startsWith('[')) return;
+  try {
+    const result = await post('/files/generate', {
+      prompt: userPrompt,
+      content,
+      file_type: intent.file_type,
+      filename: intent.filename || undefined
+    });
+    addFilesToLibrary([{ ...result, generated:true }]);
+    toast(`Generated ${result.original || 'file'}`, 'ok');
+    if (!S.filesPanelOpen) openFilesPanel();
+  } catch(e) {
+    toast(`File generation failed: ${e.message || 'could not create file'}`, 'err');
+  }
+}
 function addFilesToLibrary(files = []) {
   const records = (files || []).map(att => {
+    if (att.generated || att.download_url || att.downloadUrl) {
+      const stored = att.filename || att.stored || '';
+      const name = att.original || att.name || stored || 'generated-file';
+      return {
+        id: att.id || 'file_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+        name,
+        type: att.type || att.mime || 'application/octet-stream',
+        size: att.size || 0,
+        stored,
+        generated: !!att.generated,
+        downloadUrl: att.download_url || att.downloadUrl || (stored ? `/files/download/${encodeURIComponent(stored)}` : ''),
+        preview: String(att.text_preview || att.preview || '').slice(0, 2400),
+        transcript: '',
+        imageData: '',
+        sessionId: S.activeSession || '',
+        createdAt: Date.now()
+      };
+    }
     const up = att.uploaded || {};
     const transcript = String(att.transcript?.transcript || '').trim();
     const preview = String(up.text_preview || '').trim();
@@ -3082,7 +3162,7 @@ function addFilesToLibrary(files = []) {
     };
   });
   if (!records.length) return;
-  S.fileLibrary = [...records, ...(S.fileLibrary || [])].slice(0, 80);
+  S.fileLibrary = dedupeFileRecords([...records, ...(S.fileLibrary || [])]).slice(0, 80);
   saveFileLibrary();
   updateFilesBadge();
   if (S.filesPanelOpen) renderFilesPanel();
@@ -3090,7 +3170,8 @@ function addFilesToLibrary(files = []) {
 function fileRowHtml(file, pending = false) {
   const image = file.previewUrl || file.imageData || '';
   const thumb = image ? `<img src="${escAttr(image)}" alt="">` : `<span class="file-ext">${escHtml(attachmentExt(file.name, file.type))}</span>`;
-  const sub = `${fmtFileSize(file.size)} / ${file.type || 'file'}${pending ? ' / pending' : file.stored ? ' / uploaded' : ''}`;
+  const status = pending ? 'pending' : file.generated ? 'generated' : file.stored ? 'uploaded' : '';
+  const sub = `${fmtFileSize(file.size)} / ${file.type || 'file'}${status ? ' / ' + status : ''}`;
   return `<div class="file-row ${pending?'pending':''}">
     <div class="file-tilt">${thumb}</div>
     <div style="min-width:0">
@@ -3104,7 +3185,8 @@ function renderFilesPanel() {
   const panel = document.getElementById('files-side-panel');
   if (!panel) return;
   const pending = (S.pendingAttachments || []).map(f => ({ ...f, pending:true }));
-  const files = [...pending, ...(S.fileLibrary || [])];
+  S.fileLibrary = dedupeFileRecords(S.fileLibrary || []).slice(0, 80);
+  const files = dedupeFileRecords([...pending, ...(S.fileLibrary || [])]);
   const content = files.filter(f => f.previewUrl || f.imageData || f.preview || f.transcript).slice(0, 8);
   panel.innerHTML = `
     <div class="files-panel-head">
@@ -3150,6 +3232,10 @@ function clearFileLibrary() {
 function downloadFileRecord(id) {
   const file = [...(S.pendingAttachments || []), ...(S.fileLibrary || [])].find(f => f.id === id);
   if (!file) return;
+  if (file.downloadUrl || file.stored) {
+    downloadServerFile(file);
+    return;
+  }
   const href = file.previewUrl || file.imageData || '';
   const a = document.createElement('a');
   a.download = file.name || 'jazz-file';
@@ -3165,6 +3251,21 @@ function downloadFileRecord(id) {
   a.click();
   a.remove();
   if (a.href.startsWith('blob:') && !file.previewUrl) setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+async function downloadServerFile(file) {
+  try {
+    const url = file.downloadUrl || `/files/download/${encodeURIComponent(file.stored)}`;
+    const r = await apiFetch(API + url, { headers:{ Authorization:'Bearer '+S.token } });
+    if (!r.ok) throw new Error('Download failed');
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = file.name || 'jazz-file';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } catch(e) { toast(e.message || 'Download failed', 'err'); }
 }
 let _accountOutsideHandler = null;
 function accountInitial() { return (S.user?.full_name || S.user?.email || 'J')[0].toUpperCase(); }
