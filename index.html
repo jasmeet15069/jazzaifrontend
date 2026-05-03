@@ -1354,6 +1354,8 @@ function modelIntelligenceMeta(model = {}) {
   else if (maxB >= 3) score += 4;
   if (hay.includes('qwen3-235b') || hay.includes('qwen3 235b')) score += 18;
   else if (hay.includes('qwen3')) score += 12;
+  if (hay.includes('kimi-k2.6') || hay.includes('kimi k2.6') || hay.includes('moonshotai/kimi')) score += 19;
+  else if (hay.includes('kimi') || hay.includes('moonshot')) score += 15;
   if (hay.includes('glm-4.6') || hay.includes('glm 4.6')) score += 17;
   else if (hay.includes('glm-4.5') || hay.includes('glm 4.5')) score += 15;
   if (hay.includes('gemma-4') || hay.includes('gemma 4')) score += 14;
@@ -1363,6 +1365,7 @@ function modelIntelligenceMeta(model = {}) {
   if (hay.includes('dolphin')) score += 7;
   if (hay.includes('deepseek-r1') || hay.includes('deepseek r1')) score += 13;
   if (hay.includes('deepseek-v3') || hay.includes('deepseek v3')) score += 14;
+  if (hay.includes('thinking') || hay.includes('most-intelligent')) score += 7;
   if (hay.includes('vision') || hay.includes('vl') || hay.includes('image')) score += 3;
   if (ctx >= 128000) score += 5;
   else if (ctx >= 64000) score += 3;
