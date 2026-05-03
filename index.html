@@ -3095,14 +3095,20 @@ function detectGeneratedFileRequest(text = '') {
   const raw = String(text || '').trim();
   const s = raw.toLowerCase();
   if (!/\b(generate|create|make|export|download|save|build|prepare)\b/.test(s)) return null;
-  if (!/\b(file|pdf|excel|xlsx|spreadsheet|workbook|csv|text|txt|document|report)\b/.test(s)) return null;
+  if (!/\b(file|pdf|excel|xlsx|spreadsheet|workbook|csv|text|txt|markdown|md|word|docx|doc|powerpoint|pptx|ppt|slides|presentation|html|webpage|json|zip|archive|document|report)\b/.test(s)) return null;
   let fileType = '';
-  if (/\b(excel|xlsx|spreadsheet|workbook)\b/.test(s)) fileType = 'xlsx';
+  if (/\b(powerpoint|pptx|ppt|slides|presentation|deck)\b/.test(s)) fileType = 'pptx';
+  else if (/\b(word|docx|doc)\b/.test(s)) fileType = 'docx';
+  else if (/\b(excel|xlsx|spreadsheet|workbook)\b/.test(s)) fileType = 'xlsx';
   else if (/\bcsv\b/.test(s)) fileType = 'csv';
+  else if (/\b(html|webpage|web page)\b/.test(s)) fileType = 'html';
+  else if (/\bjson\b/.test(s)) fileType = 'json';
+  else if (/\b(zip|archive)\b/.test(s)) fileType = 'zip';
+  else if (/\b(markdown|md)\b/.test(s)) fileType = 'md';
   else if (/\b(pdf|report|document)\b/.test(s)) fileType = 'pdf';
   else if (/\b(text|txt)\b/.test(s)) fileType = 'txt';
   else fileType = 'txt';
-  const nameMatch = raw.match(/(?:called|named|filename|file name|as)\s+["'`]?([A-Za-z0-9][A-Za-z0-9._ -]{0,80}?\.(?:pdf|xlsx|csv|txt))/i)
+  const nameMatch = raw.match(/(?:called|named|filename|file name|as)\s+["'`]?([A-Za-z0-9][A-Za-z0-9._ -]{0,80}?\.(?:pdf|xlsx|csv|txt|md|markdown|docx|pptx|html|json|zip))/i)
     || raw.match(/(?:called|named|filename|file name|as)\s+["'`]?([A-Za-z0-9][A-Za-z0-9._ -]{1,80}?)(?=$|["'`,.!?:;]|\s+(?:with|for|from|about|containing|using|and)\b)/i);
   return { file_type: fileType, filename: nameMatch?.[1]?.trim() || '' };
 }
