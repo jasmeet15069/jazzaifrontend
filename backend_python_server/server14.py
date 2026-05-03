@@ -1,26 +1,26 @@
-﻿"""
-â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-â•‘                        JAZZ AI  â€”  v14.0  Production                        â•‘
-â•‘                                                                              â•‘
-â•‘  Architecture : FastAPI Â· SQLite/WAL Â· ChromaDB Â· APScheduler               â•‘
-â•‘  Auth         : JWT + Refresh Â· API-keys (scoped) Â· Rate-limiting            â•‘
-â•‘  Chat         : Session Â· streaming SSE Â· branching Â· edit Â· regenerate      â•‘
-â•‘  Context      : Sliding-window + rolling summaries + memory + RAG            â•‘
-â•‘  RAG          : Chunk â†’ embed â†’ hybrid retrieval â†’ re-rank                  â•‘
-â•‘  Memory       : Auto-extract Â· tiered priority Â· confidence scoring          â•‘
-â•‘  Agents       : Think â†’ Act â†’ Observe Â· tool registry Â· cron jobs           â•‘
-â•‘  OAuth        : Full PKCE OAuth2 for 25+ connectors (FIXED)                 â•‘
-â•‘  Smart Conn.  : Gmail Â· Calendar Â· Slack Â· Notion Â· GitHub Â· Zapier Â· more  â•‘
-â•‘  MCP          : Full MCP server CRUD Â· tool discovery Â· JSON-RPC 2.0        â•‘
-â•‘  LiveKit      : Voice rooms Â· STT (Whisper) Â· TTS (PlayAI) Â· multilingual   â•‘
-â•‘  Computer     : Shell Â· browser Â· file ops Â· code execution                  â•‘
-â•‘  Admin        : Multi-model compare Â· Impersonation Â· GDPR Â· audit log      â•‘
-â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                        JAZZ AI  —  v14.0  Production                        ║
+║                                                                              ║
+║  Architecture : FastAPI · SQLite/WAL · ChromaDB · APScheduler               ║
+║  Auth         : JWT + Refresh · API-keys (scoped) · Rate-limiting            ║
+║  Chat         : Session · streaming SSE · branching · edit · regenerate      ║
+║  Context      : Sliding-window + rolling summaries + memory + RAG            ║
+║  RAG          : Chunk → embed → hybrid retrieval → re-rank                  ║
+║  Memory       : Auto-extract · tiered priority · confidence scoring          ║
+║  Agents       : Think → Act → Observe · tool registry · cron jobs           ║
+║  OAuth        : Full PKCE OAuth2 for 25+ connectors (FIXED)                 ║
+║  Smart Conn.  : Gmail · Calendar · Slack · Notion · GitHub · Zapier · more  ║
+║  MCP          : Full MCP server CRUD · tool discovery · JSON-RPC 2.0        ║
+║  LiveKit      : Voice rooms · STT (Whisper) · TTS (PlayAI) · multilingual   ║
+║  Computer     : Shell · browser · file ops · code execution                  ║
+║  Admin        : Multi-model compare · Impersonation · GDPR · audit log      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
 from __future__ import annotations
 
-# â”€â”€â”€ stdlib â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── stdlib ───────────────────────────────────────────────────────────────────
 import asyncio, base64, csv, hashlib, hmac, html as html_lib, io, json, logging, math, os, platform, socket
 import re, secrets, shlex, shutil, subprocess, sys, tempfile, time, traceback, uuid
 import urllib.parse, urllib.request, urllib.error
@@ -32,7 +32,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional, Set, Tuple
 
-# â”€â”€â”€ third-party â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── third-party ──────────────────────────────────────────────────────────────
 import aiosqlite
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -100,13 +100,13 @@ except ImportError:
 _DOTENV_PATH = find_dotenv(usecwd=True)
 load_dotenv(_DOTENV_PATH or None)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§1  LOGGING
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §1  LOGGING
+# ══════════════════════════════════════════════════════════════════════════════
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s â€” %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
     handlers=[
         logging.FileHandler("jazz.log", encoding="utf-8"),
         logging.StreamHandler(),
@@ -114,9 +114,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("jazz")
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§2  CONFIGURATION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §2  CONFIGURATION
+# ══════════════════════════════════════════════════════════════════════════════
 
 JWT_SECRET      = os.getenv("JWT_SECRET_KEY") or secrets.token_urlsafe(64)
 JWT_ALGORITHM   = "HS256"
@@ -134,13 +134,13 @@ def _encrypt(data: dict) -> str:
 def _decrypt(token: str) -> dict:
     return json.loads(_fernet.decrypt(token.encode()).decode())
 
-ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "admin@example.com")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "change-me-before-run")
+ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "jasmeet.15069@gmail.com")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Acx@POWER@12345jassi789")
 GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
 HF_TOKEN       = os.getenv("HF_TOKEN", "")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
 
-# â”€â”€ OAuth Provider Credentials â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── OAuth Provider Credentials ────────────────────────────────────────────────
 GOOGLE_CLIENT_ID        = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET    = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GITHUB_CLIENT_ID        = os.getenv("GITHUB_CLIENT_ID", "")
@@ -186,7 +186,7 @@ RAZORPAY_PRO_MONTHLY    = int(os.getenv("RAZORPAY_PRO_MONTHLY_AMOUNT", "20000") 
 RAZORPAY_PREMIUM_MONTHLY= int(os.getenv("RAZORPAY_PREMIUM_MONTHLY_AMOUNT", "99900") or "99900")
 RAZORPAY_ENT_MONTHLY    = int(os.getenv("RAZORPAY_ENTERPRISE_MONTHLY_AMOUNT", "499900") or "499900")
 
-APP_BASE_URL       = os.getenv("APP_BASE_URL", "http://localhost:8000")
+APP_BASE_URL       = os.getenv("APP_BASE_URL", "https://imperceptibly-hymnlike-leesa.ngrok-free.dev")
 LIVEKIT_URL        = os.getenv("LIVEKIT_URL", "")
 LIVEKIT_API_KEY    = os.getenv("LIVEKIT_API_KEY", "")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "")
@@ -219,13 +219,20 @@ _RUNTIME_ENV_KEYS = [
     "RAZORPAY_PRO_MONTHLY_AMOUNT", "RAZORPAY_PREMIUM_MONTHLY_AMOUNT", "RAZORPAY_ENTERPRISE_MONTHLY_AMOUNT",
     "APP_BASE_URL", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET",
     "TTS_VOICE", "LIVY_URL", "LIVY_USER", "LIVY_PASSWORD",
+    "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+    "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY",
+    "REQUIRE_EMAIL_VERIFICATION", "EMAIL_VERIFICATION_EXPIRE_HOURS",
+    "EMAIL_VERIFICATION_RETURN_LINK",
 ]
 _RUNTIME_ENV_DEFAULTS = {
-    "ADMIN_EMAIL": "admin@example.com",
-    "ADMIN_PASSWORD": "change-me-before-run",
-    "APP_BASE_URL": "http://localhost:8000",
+    "ADMIN_EMAIL": "jasmeet.15069@gmail.com",
+    "ADMIN_PASSWORD": "Acx@POWER@12345jassi789",
+    "APP_BASE_URL": "https://imperceptibly-hymnlike-leesa.ngrok-free.dev",
     "LIVY_URL": "http://localhost:8998",
     "TTS_VOICE": "Fritz-PlayAI",
+    "REQUIRE_EMAIL_VERIFICATION": "1",
+    "EMAIL_VERIFICATION_EXPIRE_HOURS": "24",
+    "EMAIL_VERIFICATION_RETURN_LINK": "1",
 }
 
 def _env_file_path() -> Path:
@@ -308,7 +315,7 @@ ALLOWED_EXTENSIONS = {
 _SERVER_START = datetime.now(timezone.utc)
 _executor = ThreadPoolExecutor(max_workers=16)
 
-# â”€â”€ Model Registry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Model Registry ────────────────────────────────────────────────────────────
 GROQ_MODELS = {
     "llama-3.3-70b-versatile": {"label":"Llama 3.3 70B","ctx":32768,"fast":False,"provider":"groq","censored":True},
     "llama-3.1-8b-instant":    {"label":"Llama 3.1 8B (Fast)","ctx":131072,"fast":True,"provider":"groq","censored":True},
@@ -395,7 +402,7 @@ NVIDIA_STREAM_TIMEOUTS = {
     "moonshotai/kimi-k2.6": int(os.getenv("NVIDIA_KIMI_K26_TIMEOUT", "8")),
 }
 
-# â”€â”€ Style hints for website builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Style hints for website builder ──────────────────────────────────────────
 _STYLE_HINTS = {
     "modern":        "Clean, bold typography, whitespace, subtle shadows, CSS Grid",
     "retro":         "80s/90s aesthetic, pixel fonts, neon on dark, CRT scanlines",
@@ -406,9 +413,9 @@ _STYLE_HINTS = {
     "futuristic":    "Sci-fi aesthetic, neon glows, animated particles, holographic effects",
 }
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§3  DATABASE
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §3  DATABASE
+# ══════════════════════════════════════════════════════════════════════════════
 
 _db: Optional[aiosqlite.Connection] = None
 
@@ -633,7 +640,7 @@ async def db_transaction():
     except Exception:
         await _conn().rollback(); raise
 
-# â”€â”€ Schema â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Schema ────────────────────────────────────────────────────────────────────
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
@@ -647,6 +654,12 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS refresh_tokens (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
     expires_at TEXT NOT NULL, revoked INTEGER DEFAULT 0, created_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT,
+    created_at TEXT NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS chat_sessions (
@@ -915,7 +928,7 @@ CREATE TABLE IF NOT EXISTS platform_connectors (
     is_enabled INTEGER DEFAULT 0,
     display_name TEXT NOT NULL,
     category TEXT NOT NULL,
-    icon TEXT DEFAULT 'ðŸ”Œ',
+    icon TEXT DEFAULT '🔌',
     setup_status TEXT DEFAULT 'not_configured'
         CHECK(setup_status IN('ready','partial','not_configured')),
     admin_notes TEXT DEFAULT '',
@@ -1015,6 +1028,8 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id,is_re
 CREATE INDEX IF NOT EXISTS idx_rate_limits        ON rate_limits(user_id,resource,window_key);
 CREATE INDEX IF NOT EXISTS idx_code_logs_user     ON code_run_logs(user_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens     ON refresh_tokens(token_hash,revoked);
+CREATE INDEX IF NOT EXISTS idx_email_ver_hash     ON email_verification_tokens(token_hash,used_at);
+CREATE INDEX IF NOT EXISTS idx_email_ver_user     ON email_verification_tokens(user_id,used_at);
 CREATE INDEX IF NOT EXISTS idx_ai_models_active   ON ai_models(is_active,is_default);
 CREATE INDEX IF NOT EXISTS idx_oauth_states       ON oauth_states(state, expires_at);
 CREATE INDEX IF NOT EXISTS idx_smart_conn_user    ON smart_connectors(user_id, status);
@@ -1028,9 +1043,9 @@ CREATE INDEX IF NOT EXISTS idx_skills_enabled     ON skills(is_enabled,name);
 CREATE INDEX IF NOT EXISTS idx_skill_usage_user   ON skill_usage_logs(user_id,created_at DESC);
 """
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§4  SECURITY / AUTH
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §4  SECURITY / AUTH
+# ══════════════════════════════════════════════════════════════════════════════
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer  = HTTPBearer(auto_error=False)
@@ -1075,6 +1090,132 @@ def _decode_oauth_state_token(state: str) -> Optional[Dict]:
     return payload
 
 def _hash_token(raw: str) -> str: return hashlib.sha256(raw.encode()).hexdigest()
+
+_EMAIL_RE = re.compile(r"^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,63}$", re.I)
+
+def _env_bool(key: str, default: bool = False) -> bool:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() not in ("0", "false", "no", "off", "")
+
+def _env_int(key: str, default: int, min_value: int, max_value: int) -> int:
+    try:
+        value = int(os.getenv(key, str(default)) or default)
+    except Exception:
+        value = default
+    return max(min_value, min(max_value, value))
+
+def _email_verification_required() -> bool:
+    return _env_bool("REQUIRE_EMAIL_VERIFICATION", True)
+
+def _email_verification_return_link() -> bool:
+    # Keep the local/live install usable even when SMTP is not configured yet.
+    return _env_bool("EMAIL_VERIFICATION_RETURN_LINK", True)
+
+def _email_verification_expiry_hours() -> int:
+    return _env_int("EMAIL_VERIFICATION_EXPIRE_HOURS", 24, 1, 168)
+
+def _supabase_public_config() -> Dict[str, Any]:
+    url = os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL") or ""
+    key = os.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY") or ""
+    return {
+        "enabled": bool(url.strip() and key.strip()),
+        "url": url.strip(),
+        "publishable_key": key.strip(),
+    }
+
+def _normalize_email(email: str) -> str:
+    return str(email or "").strip().lower()
+
+def _validated_email(email: str) -> str:
+    clean = _normalize_email(email)
+    if not clean or len(clean) > 254 or not _EMAIL_RE.fullmatch(clean):
+        raise HTTPException(400, "Enter a valid email address")
+    return clean
+
+def _password_issues(password: str) -> List[str]:
+    pw = password or ""
+    issues: List[str] = []
+    if len(pw) < 8:
+        issues.append("at least 8 characters")
+    if len(pw) > 128:
+        issues.append("128 characters or fewer")
+    if re.search(r"\s", pw):
+        issues.append("no spaces")
+    if not re.search(r"[a-z]", pw):
+        issues.append("one lowercase letter")
+    if not re.search(r"[A-Z]", pw):
+        issues.append("one uppercase letter")
+    if not re.search(r"\d", pw):
+        issues.append("one number")
+    if not re.search(r"[^A-Za-z0-9\s]", pw):
+        issues.append("one symbol")
+    return issues
+
+def _validated_password(password: str) -> str:
+    issues = _password_issues(password)
+    if issues:
+        raise HTTPException(400, "Password must include " + ", ".join(issues))
+    return password
+
+async def _create_email_verification_link(user_id: str, email: str, request: Optional[Request] = None) -> str:
+    raw = f"jev_{secrets.token_urlsafe(32)}"
+    now = _utcnow()
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=_email_verification_expiry_hours())).isoformat()
+    await db_execute(
+        "UPDATE email_verification_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL",
+        (now, user_id),
+    )
+    await db_execute(
+        "INSERT INTO email_verification_tokens(id,user_id,token_hash,email,expires_at,created_at)"
+        " VALUES(?,?,?,?,?,?)",
+        (_new_id(), user_id, _hash_token(raw), email, expires_at, now),
+    )
+    return f"{_app_base_url(request)}/auth/verify-email?token={urllib.parse.quote(raw)}"
+
+def _verification_response(email: str, link: str) -> Dict[str, Any]:
+    resp: Dict[str, Any] = {
+        "ok": True,
+        "verification_required": True,
+        "email": email,
+        "message": "Verification link created. Open it, then sign in.",
+    }
+    if _email_verification_return_link():
+        resp["verification_link"] = link
+    return resp
+
+async def _verify_email_token(raw_token: str) -> Tuple[bool, str]:
+    token = str(raw_token or "").strip()
+    if not token:
+        return False, "Missing verification token"
+    row = await db_fetchone(
+        "SELECT * FROM email_verification_tokens WHERE token_hash=? AND used_at IS NULL",
+        (_hash_token(token),),
+    )
+    if not row:
+        return False, "Verification link is invalid or already used"
+    try:
+        expires_at = datetime.fromisoformat(row["expires_at"])
+    except Exception:
+        expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    if expires_at < datetime.now(timezone.utc):
+        return False, "Verification link has expired. Please request a new one."
+    now = _utcnow()
+    await db_execute("UPDATE users SET is_verified=1,updated_at=? WHERE id=?", (now, row["user_id"]))
+    await db_execute("UPDATE email_verification_tokens SET used_at=? WHERE id=?", (now, row["id"]))
+    await db_execute(
+        "INSERT INTO audit_log(id,actor_id,target_id,action,detail_json,created_at) VALUES(?,?,?,?,?,?)",
+        (_new_id(), row["user_id"], row["user_id"], "email_verified", json.dumps({"email": row["email"]}), now),
+    )
+    return True, row["email"]
+
+def _auth_html_page(title: str, message: str, ok: bool = True) -> HTMLResponse:
+    color = "#34d399" if ok else "#f87171"
+    safe_title = html_lib.escape(title)
+    safe_msg = html_lib.escape(message)
+    html = f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe_title}</title><style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#07070f;color:#e4e4f4;font-family:Inter,system-ui,sans-serif}}.box{{width:min(460px,calc(100vw - 32px));border:1px solid #252540;border-radius:18px;background:#101020;padding:28px;box-shadow:0 20px 80px rgba(0,0,0,.45)}}h1{{margin:0 0 10px;font-size:24px}}p{{color:#a0a0c0;line-height:1.5}}a{{color:#8b7cf6}}</style></head><body><main class="box"><h1 style="color:{color}">{safe_title}</h1><p>{safe_msg}</p><p><a href="/">Back to JAZZ AI</a></p></main></body></html>"""
+    return HTMLResponse(html, status_code=200 if ok else 400)
 
 async def _setting_get(key: str, default: Any = None) -> Any:
     row = await db_fetchone("SELECT value FROM platform_settings WHERE key=?", (key,))
@@ -1192,9 +1333,9 @@ async def _require_admin(user: Dict = Depends(_get_current_user)) -> Dict:
     if user.get("role") != "admin": raise HTTPException(status_code=403, detail="Admin only")
     return user
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§5  RATE LIMITING
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §5  RATE LIMITING
+# ══════════════════════════════════════════════════════════════════════════════
 
 _ENV_KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _ENV_SECRET_RE = re.compile(r"(KEY|SECRET|TOKEN|PASSWORD|PASS|PRIVATE|CREDENTIAL|FERNET|JWT)", re.I)
@@ -1276,9 +1417,9 @@ async def _check_rate_limit(user: Dict, resource: str) -> None:
         "ON CONFLICT(user_id,resource,window_key) DO UPDATE SET count=count+1,updated_at=excluded.updated_at",
         (_new_id(), uid, resource, wkey, _utcnow()))
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§6  LLM CLIENT
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §6  LLM CLIENT
+# ══════════════════════════════════════════════════════════════════════════════
 
 def _groq_client() -> OpenAI:
     return OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
@@ -1333,7 +1474,7 @@ async def _llm_text(messages: List[Dict], model_id: str = "llama-3.3-70b-versati
         return resp.choices[0].message.content or ""
     except Exception as exc:
         # Fallback to default groq model
-        logger.warning("[LLM] %s failed: %s â€” falling back", model_id, exc)
+        logger.warning("[LLM] %s failed: %s — falling back", model_id, exc)
         try:
             resp = await asyncio.get_running_loop().run_in_executor(
                 _executor,
@@ -1803,6 +1944,7 @@ async def _stream_nvidia_text_once(messages: List[Dict], model_id: str,
             loop.call_soon_threadsafe(queue.put_nowait, ("error", last_error, meta))
         else:
             loop.call_soon_threadsafe(queue.put_nowait, ("error", RuntimeError("No NVIDIA provider models configured"), meta))
+        return
 
     loop.run_in_executor(_executor, _run_stream)
     while True:
@@ -1842,9 +1984,9 @@ async def _model_request_input_budget(model_id: str) -> int:
         default_cap = min(default_cap, 8500)
     return max(1024, min(await _context_input_budget(mid), default_cap))
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§7  RAG  (ChromaDB)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §7  RAG  (ChromaDB)
+# ══════════════════════════════════════════════════════════════════════════════
 
 _chroma_client: Optional[Any] = None
 _chroma_ef: Optional[Any] = None
@@ -1980,9 +2122,9 @@ async def _rag_search(user_id: str, query: str, k: int = TOP_K_RETRIEVAL,
     except Exception as e:
         logger.warning("[RAG] search error: %s", e); return []
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§8  MEMORY
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §8  MEMORY
+# ══════════════════════════════════════════════════════════════════════════════
 
 async def _get_memories(user_id: str, limit: int = 30) -> List[Dict]:
     return await db_fetchall(
@@ -1993,7 +2135,7 @@ def _format_memories(memories: List[Dict]) -> str:
     if not memories: return ""
     lines = ["[User memory context:]"]
     for m in memories:
-        lines.append(f"  â€¢ {m['key']}: {m['value']}")
+        lines.append(f"  • {m['key']}: {m['value']}")
     return "\n".join(lines)
 
 async def _upsert_memory(user_id: str, key: str, value: str, source: str = "auto",
@@ -2042,25 +2184,25 @@ async def _auto_extract_memories(user_id: str, user_msg: str, ai_msg: str):
     except Exception as e:
         logger.debug("[MEMORY] auto-extract: %s", e)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§9  CONTEXT BUILDER
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §9  CONTEXT BUILDER
+# ══════════════════════════════════════════════════════════════════════════════
 
-_SYSTEM_PROMPT = """You are JAZZ â€” a sharp, production-grade AI assistant with real tool access.
+_SYSTEM_PROMPT = """You are JAZZ — a sharp, production-grade AI assistant with real tool access.
 
 CAPABILITIES:
-â€¢ Connected apps (Gmail, Calendar, Slack, GitHub, Notion, etc.) via /command syntax
-â€¢ Execute code, run shell commands, search documents via RAG
-â€¢ Memory of user preferences and past context
-â€¢ Deep reasoning mode for complex questions
+• Connected apps (Gmail, Calendar, Slack, GitHub, Notion, etc.) via /command syntax
+• Execute code, run shell commands, search documents via RAG
+• Memory of user preferences and past context
+• Deep reasoning mode for complex questions
 
 RESPONSE GUIDELINES:
-â€¢ Be direct, precise, and genuinely helpful
-â€¢ Use markdown for structure (tables, code blocks, lists)
-â€¢ For connector results, present data in clean tables or structured lists
-â€¢ For code, always include the language tag in code blocks"""
+• Be direct, precise, and genuinely helpful
+• Use markdown for structure (tables, code blocks, lists)
+• For connector results, present data in clean tables or structured lists
+• For code, always include the language tag in code blocks"""
 
-_THINKING_SYSTEM = """You are JAZZ â€” an advanced AI with deep reasoning capabilities.
+_THINKING_SYSTEM = """You are JAZZ — an advanced AI with deep reasoning capabilities.
 When given complex questions, think through the problem carefully before answering.
 
 Format your response as:
@@ -2498,9 +2640,9 @@ async def _auto_title(session_id: str, user_msg: str, ai_msg: str = "") -> None:
     except Exception as e:
         logger.debug("[TITLE] %s", e)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§10  OAUTH 2.0 â€” FULL PKCE FLOW (FIXED â€” All 25+ connectors)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §10  OAUTH 2.0 — FULL PKCE FLOW (FIXED — All 25+ connectors)
+# ══════════════════════════════════════════════════════════════════════════════
 
 _pending_oauth: Dict[str, Dict] = {}
 _completed_oauth: Dict[str, Dict] = {}
@@ -2778,7 +2920,7 @@ body{{background:#07070f;color:#e4e4f4;font-family:system-ui,sans-serif;
   padding:32px 40px;text-align:center;max-width:400px;width:90%}}
 h2{{color:#34d399;font-size:22px;margin-bottom:10px}}
 p{{color:#9090b0;font-size:14px;line-height:1.5}}</style></head><body>
-<div class="card"><h2>âœ… {name} Connected!</h2>
+<div class="card"><h2>✅ {name} Connected!</h2>
 <p>Authorization successful. You can close this window and return to JAZZ.</p>
 <script>setTimeout(()=>window.close(),2000)</script></div></body></html>"""
 
@@ -2792,7 +2934,7 @@ h2{{color:#f87171;font-size:20px;margin-bottom:10px}}
 p{{color:#9090b0;font-size:14px;line-height:1.5;margin-bottom:8px}}
 code{{background:#111;padding:4px 8px;border-radius:4px;font-size:12px;display:block;
   margin-top:10px;word-break:break-all;color:#fbbf24}}</style></head><body>
-<div class="card"><h2>âŒ Connection Failed</h2>
+<div class="card"><h2>❌ Connection Failed</h2>
 <p>{message}</p><code>{detail}</code>
 <script>setTimeout(()=>window.close(),6000)</script></div></body></html>"""
 
@@ -2807,12 +2949,12 @@ p{{color:#9090b0;font-size:14px;line-height:1.7;margin-bottom:10px}}
 code{{background:#111;padding:3px 7px;border-radius:4px;font-size:12px;color:#7c6ff7;word-break:break-all}}
 .steps{{margin:16px 0;padding:16px;background:#0a0a16;border-radius:8px;border:1px solid #1a1a30}}
 .step{{font-size:13px;color:#9090b0;margin-bottom:8px}}</style></head><body>
-<div class="card"><h2>âš™ï¸ {name} OAuth Not Configured</h2>
+<div class="card"><h2>⚙️ {name} OAuth Not Configured</h2>
 <p>To enable <b>{name}</b> OAuth, set these environment variables and restart JAZZ:</p>
 <div class="steps">
-<div class="step">â€¢ <code>{id_var}</code> â€” your {name} App Client ID</div>
-<div class="step">â€¢ <code>{secret_var}</code> â€” your {name} App Client Secret</div>
-<div class="step">â€¢ <code>APP_BASE_URL</code> â€” your server base URL (e.g. https://yourdomain.com)</div>
+<div class="step">• <code>{id_var}</code> — your {name} App Client ID</div>
+<div class="step">• <code>{secret_var}</code> — your {name} App Client Secret</div>
+<div class="step">• <code>APP_BASE_URL</code> — your server base URL (e.g. https://yourdomain.com)</div>
 </div>
 <p>Also add this <b>Redirect URI</b> in your {name} developer console:</p>
 <code>{redirect_uri}</code>
@@ -2854,14 +2996,14 @@ async def lifespan(app: FastAPI):
     jobs = await db_fetchall("SELECT * FROM agent_jobs WHERE enabled=1")
     for j in jobs: _schedule_job(j)
     _scheduler.start()
-    logger.info("[INIT] JAZZ AI v14 started â€” %d agent jobs scheduled", len(jobs))
+    logger.info("[INIT] JAZZ AI v14 started — %d agent jobs scheduled", len(jobs))
     yield
     _scheduler.shutdown(wait=False)
     if _db: await _db.close()
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§11  CONNECTOR ACTIONS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §11  CONNECTOR ACTIONS
+# ══════════════════════════════════════════════════════════════════════════════
 
 async def _get_connector_creds_record(user_id: str, connector_type: str) -> Tuple[Optional[Dict], str, str]:
     smart = await db_fetchone(
@@ -3056,7 +3198,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             return {"error":"GraphQL query is required"}
         return await _http_request_json("POST", endpoint, body, headers)
 
-    # â”€â”€ Gmail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Gmail ──────────────────────────────────────────────────────────────────
     if connector_type == "gmail":
         base = "https://gmail.googleapis.com/gmail/v1/users/me"
         def _gmail_body_from_payload(payload: Dict[str, Any]) -> str:
@@ -3261,7 +3403,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             result = await _post(f"{base}/messages/send", payload_body)
             return result if isinstance(result, dict) and result.get("error") else {"status": "replied", "thread_id": thread_id, "to": to_addr, "subject": subj}
 
-    # â”€â”€ Google Calendar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Google Calendar ────────────────────────────────────────────────────────
     if connector_type == "google_calendar":
         base = "https://www.googleapis.com/calendar/v3/calendars/primary"
         cal_base = "https://www.googleapis.com/calendar/v3"
@@ -3304,7 +3446,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
         if action == "list_calendars":
             return await _get(f"{cal_base}/users/me/calendarList")
 
-    # â”€â”€ Google Drive â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Google Drive ────────────────────────────────────────────────────────────
     if connector_type == "google_drive":
         base = "https://www.googleapis.com/drive/v3"
         upload_base = "https://www.googleapis.com/upload/drive/v3"
@@ -3361,7 +3503,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
                 meta_result["download_url"] = f"{base}/files/{fid}?alt=media"
             return meta_result
 
-    # â”€â”€ Google Sheets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Google Sheets ────────────────────────────────────────────────────────────
     if connector_type == "google_sheets":
         sheets_base = "https://sheets.googleapis.com/v4/spreadsheets"
         if action == "list_files":
@@ -3384,7 +3526,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             sid = params.get("spreadsheet_id","")
             return await _get(f"{sheets_base}/{sid}?fields=spreadsheetId,properties,sheets.properties")
 
-    # â”€â”€ Google Meet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Google Meet ──────────────────────────────────────────────────────────────
     if connector_type == "google_meet":
         cal_base = "https://www.googleapis.com/calendar/v3/calendars/primary"
         if action in ("create_meeting","create_event"):
@@ -3415,13 +3557,13 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
                                  "start":e.get("start",{}).get("dateTime",""),"meet_link":meet_link})
             return out_list
 
-    # â”€â”€ GitHub (full integration â€” repos, issues, PRs, commits, files, search) â”€â”€â”€
+    # ── GitHub (full integration — repos, issues, PRs, commits, files, search) ───
     if connector_type == "github":
         base = "https://api.github.com"
         gh_h = {"Authorization":f"Bearer {token}","Accept":"application/vnd.github+json",
                 "X-GitHub-Api-Version":"2022-11-28"}
 
-        # â”€â”€ profile & repos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── profile & repos ─────────────────────────────────────────────────────
         if action == "get_user":
             return await _http_get(f"{base}/user", gh_h)
         if action == "list_repos":
@@ -3438,7 +3580,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             repo = params.get("repo","")
             return await _http_get(f"{base}/repos/{repo}/contributors?per_page=20", gh_h)
 
-        # â”€â”€ issues â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── issues ──────────────────────────────────────────────────────────────
         if action == "list_issues":
             repo = params.get("repo","")
             state = params.get("state","open")
@@ -3464,7 +3606,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             return await _http_post_json(f"{base}/repos/{repo}/issues/{num}/comments",
                 {"body":params.get("body","")}, gh_h)
 
-        # â”€â”€ pull requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── pull requests ────────────────────────────────────────────────────────
         if action == "list_prs":
             repo = params.get("repo","")
             state = params.get("state","open")  # open|closed|all
@@ -3504,7 +3646,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
                 review_body["comments"] = params["comments"]
             return await _http_post_json(f"{base}/repos/{repo}/pulls/{num}/reviews", review_body, gh_h)
 
-        # â”€â”€ commits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── commits ─────────────────────────────────────────────────────────────
         if action == "list_commits":
             repo = params.get("repo","")
             branch = params.get("branch","") or params.get("sha","")
@@ -3517,7 +3659,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             repo = params.get("repo",""); sha = params.get("sha","")
             return await _http_get(f"{base}/repos/{repo}/commits/{sha}", gh_h)
 
-        # â”€â”€ files & content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── files & content ──────────────────────────────────────────────────────
         if action == "get_file":
             repo = params.get("repo",""); path = params.get("path","")
             ref = params.get("ref","") or params.get("branch","")
@@ -3550,7 +3692,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             if params.get("branch"): file_body["branch"] = params["branch"]
             return await _http_post_json(f"{base}/repos/{repo}/contents/{path}", file_body, gh_h)
 
-        # â”€â”€ search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── search ───────────────────────────────────────────────────────────────
         if action == "search_code":
             q = params.get("query","")
             repo = params.get("repo","")
@@ -3574,7 +3716,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             per = max(1, min(30, int(params.get("per_page", 10) or 10)))
             return await _http_get(f"{base}/search/commits?q={urllib.parse.quote(q)}&per_page={per}", gh_h)
 
-        # â”€â”€ workflows & actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── workflows & actions ──────────────────────────────────────────────────
         if action == "list_workflows":
             repo = params.get("repo","")
             return await _http_get(f"{base}/repos/{repo}/actions/workflows", gh_h)
@@ -3589,7 +3731,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             trigger_body: Dict = {"ref": ref, "inputs": params.get("inputs",{})}
             return await _http_post_json(f"{base}/repos/{repo}/actions/workflows/{wid}/dispatches", trigger_body, gh_h)
 
-        # â”€â”€ releases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── releases ─────────────────────────────────────────────────────────────
         if action == "list_releases":
             repo = params.get("repo","")
             return await _http_get(f"{base}/repos/{repo}/releases?per_page=10", gh_h)
@@ -3604,7 +3746,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             }
             return await _http_post_json(f"{base}/repos/{repo}/releases", rel_body, gh_h)
 
-        # â”€â”€ gists â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── gists ────────────────────────────────────────────────────────────────
         if action == "list_gists":
             return await _http_get(f"{base}/gists?per_page=20", gh_h)
         if action == "create_gist":
@@ -3616,7 +3758,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             }
             return await _http_post_json(f"{base}/gists", gist_body, gh_h)
 
-        # â”€â”€ notifications & activity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── notifications & activity ─────────────────────────────────────────────
         if action == "list_notifications":
             return await _http_get(f"{base}/notifications?per_page=20&all=false", gh_h)
         if action == "list_starred":
@@ -3633,7 +3775,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
 
         return {"error":f"Unknown GitHub action: {action}"}
 
-    # â”€â”€ Notion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Notion ─────────────────────────────────────────────────────────────────
     if connector_type == "notion":
         base = "https://api.notion.com/v1"
         nh = {**h, "Notion-Version":"2022-06-28"}
@@ -3667,7 +3809,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             dbs = result.get("results",[]) if isinstance(result,dict) else []
             return [{"id":d.get("id",""),"title":((d.get("title") or [{}])[0].get("plain_text",""))} for d in dbs]
 
-    # â”€â”€ Slack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Slack ──────────────────────────────────────────────────────────────────
     if connector_type == "slack":
         bot_token = creds.get("bot_token", SLACK_BOT_TOKEN) or token
         sh = {"Authorization":f"Bearer {bot_token}","Content-Type":"application/json"}
@@ -3711,7 +3853,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
                 return {"error": result.get("error","search_failed")}
             return result.get("messages",{}).get("matches",[]) if isinstance(result,dict) else result
 
-    # â”€â”€ Jira â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Jira ───────────────────────────────────────────────────────────────────
     if connector_type == "jira":
         cloud_id = creds.get("cloud_id","")
         if not cloud_id:
@@ -3752,7 +3894,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             jql = f'text ~ "{q}" ORDER BY updated DESC' if q else "ORDER BY updated DESC"
             return await _get(f"{base}/search?jql={urllib.parse.quote(jql)}&maxResults=10")
 
-    # â”€â”€ Linear â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Linear ─────────────────────────────────────────────────────────────────
     if connector_type == "linear":
         lin_base = "https://api.linear.app/graphql"
         def _gql(query: str, variables: Dict = None) -> Dict:
@@ -3782,7 +3924,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
         q = _gql("{ issues(first:20) { nodes { id title state{name} assignee{name} priority url } } }")
         return await _http_post_json(lin_base, q, h)
 
-    # â”€â”€ Asana â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Asana ──────────────────────────────────────────────────────────────────
     if connector_type == "asana":
         base = "https://app.asana.com/api/1.0"
         asana_h = {**h, "Accept": "application/json"}
@@ -3828,7 +3970,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             items = result.get("data",[]) if isinstance(result,dict) else []
             return [{"id":p.get("gid",""),"name":p.get("name","")} for p in items]
 
-    # â”€â”€ HubSpot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── HubSpot ────────────────────────────────────────────────────────────────
     if connector_type == "hubspot":
         base = "https://api.hubapi.com"
         if action == "list_contacts":
@@ -3853,7 +3995,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
                                "closedate":params.get("close_date",""),"pipeline":params.get("pipeline","default"),
                                "dealstage":params.get("stage","appointmentscheduled")}})
 
-    # â”€â”€ Airtable â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Airtable ───────────────────────────────────────────────────────────────
     if connector_type == "airtable":
         base = "https://api.airtable.com/v0"
         if action == "list_bases":
@@ -3861,7 +4003,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
         if action == "list_records":
             return await _get(f"{base}/{params.get('base_id','')}/{params.get('table','')}")
 
-    # â”€â”€ Dropbox â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Dropbox ────────────────────────────────────────────────────────────────
     if connector_type == "dropbox":
         dbx_h = {"Authorization":f"Bearer {token}","Content-Type":"application/json"}
         dbx_api = "https://api.dropboxapi.com/2"
@@ -3886,7 +4028,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             path = params.get("path","")
             return await _http_post_json(f"{dbx_api}/files/create_folder_v2", {"path":path,"autorename":True}, dbx_h)
 
-    # â”€â”€ Zoom â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Zoom ───────────────────────────────────────────────────────────────────
     if connector_type == "zoom":
         base = "https://api.zoom.us/v2"
         if action == "list_meetings":
@@ -3916,7 +4058,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
         if action == "list_recordings":
             return await _get(f"{base}/users/me/recordings?page_size=10")
 
-    # â”€â”€ Microsoft Graph (Outlook / OneDrive / Teams / Power BI) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Microsoft Graph (Outlook / OneDrive / Teams / Power BI) ───────────────
     if connector_type in ("outlook","microsoft_teams","onedrive","power_bi"):
         base = "https://graph.microsoft.com/v1.0"
         if connector_type == "outlook":
@@ -3953,7 +4095,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
                 wid = creds.get("workspace_id","")
                 return await _get(f"https://api.powerbi.com/v1.0/myorg/groups/{wid}/datasets")
 
-    # â”€â”€ Salesforce â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Salesforce ─────────────────────────────────────────────────────────────
     if connector_type == "salesforce":
         instance_url = (creds.get("instance_url") or "").rstrip("/")
         if not instance_url:
@@ -3978,13 +4120,13 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             obj = params.get("object","Contact")
             return await _http_post_json(f"{base}/sobjects/{obj}", params.get("fields",{}), sf_h)
 
-    # â”€â”€ LinkedIn â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── LinkedIn ───────────────────────────────────────────────────────────────
     if connector_type == "linkedin":
         if action == "get_profile":
             return await _http_get("https://api.linkedin.com/v2/me",
                 {"Authorization":f"Bearer {token}","X-Restli-Protocol-Version":"2.0.0"})
 
-    # â”€â”€ Discord â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Discord ────────────────────────────────────────────────────────────────
     if connector_type == "discord":
         base = "https://discord.com/api/v10"
         if action == "get_guilds":
@@ -4009,7 +4151,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
                          "timestamp":m.get("timestamp","")} for m in result]
             return result
 
-    # â”€â”€ Stripe â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Stripe ─────────────────────────────────────────────────────────────────
     if connector_type == "stripe":
         stripe_key = creds.get("api_key","") or os.getenv("STRIPE_SECRET_KEY","")
         sh = {"Authorization":f"Bearer {stripe_key}","Content-Type":"application/x-www-form-urlencoded"}
@@ -4047,7 +4189,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
         if action == "list_invoices":
             return await _sget(f"{sbase}/invoices?limit={params.get('count',10)}")
 
-    # â”€â”€ BigQuery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── BigQuery ────────────────────────────────────────────────────────────────
     if connector_type == "bigquery":
         bq_base = "https://bigquery.googleapis.com/bigquery/v2"
         project = params.get("project_id","") or creds.get("project_id","")
@@ -4064,7 +4206,7 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
                     "maxResults":int(params.get("max_results",100) or 100)}
             return await _post(f"{bq_base}/projects/{project}/queries", body)
 
-    # â”€â”€ Box â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Box ─────────────────────────────────────────────────────────────────────
     if connector_type == "box":
         bx_base = "https://api.box.com/2.0"
         if action == "list_files":
@@ -4074,14 +4216,14 @@ async def _dispatch_connector_action(connector_type: str, action: str, creds: Di
             fid = params.get("file_id","")
             return await _get(f"{bx_base}/files/{fid}?fields=id,name,size,shared_link,modified_at")
         if action == "upload":
-            return {"error":"Box upload requires multipart â€” use the Box web interface or SDK directly"}
+            return {"error":"Box upload requires multipart — use the Box web interface or SDK directly"}
         if action == "search":
             q = urllib.parse.quote(params.get("query",""))
             return await _get(f"{bx_base}/search?query={q}&limit=20&fields=id,name,type,size")
 
     return {"error": f"Unknown action '{action}' for connector '{connector_type}'"}
 
-# â”€â”€ HTTP helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── HTTP helpers ──────────────────────────────────────────────────────────────
 async def _http_get(url: str, headers: Dict) -> Any:
     def _call():
         req = urllib.request.Request(url, headers=headers)
@@ -4234,9 +4376,9 @@ async def _http_patch_json(url: str, body: Dict, headers: Dict) -> Any:
             except Exception: return {"error":f"HTTP {e.code}","detail":raw.decode("utf-8","replace")[:300]}
     return await asyncio.get_running_loop().run_in_executor(_executor, _call)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§12  AGENT / TOOL SYSTEM
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §12  AGENT / TOOL SYSTEM
+# ══════════════════════════════════════════════════════════════════════════════
 
 TOOL_REGISTRY = {
     "rag_search":       {"desc":"Search user's documents","params":["query"]},
@@ -4368,9 +4510,9 @@ async def _agent_loop(prompt: str, user: Dict, tools: List[str],
 
     return "Agent reached max steps.", tool_calls
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§13  SCHEDULER
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §13  SCHEDULER
+# ══════════════════════════════════════════════════════════════════════════════
 
 _scheduler = BackgroundScheduler(timezone="UTC")
 
@@ -4434,33 +4576,33 @@ def _schedule_job(job: Dict):
     except Exception as e:
         logger.warning("[SCHEDULER] Failed to schedule job %s: %s", jid, e)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§14  SLASH COMMANDS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §14  SLASH COMMANDS
+# ══════════════════════════════════════════════════════════════════════════════
 
 _DEFAULT_SLASH_COMMANDS = [
-    # â”€â”€ Communication â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Communication ──────────────────────────────────────────────────────────
     ("gmail",    "gmail",           "Access Gmail inbox",            "list_emails",   {}),
     ("mail",     "gmail",           "Alias for /gmail",             "list_emails",   {}),
     ("calendar", "google_calendar", "Manage Google Calendar",        "list_events",   {}),
     ("cal",      "google_calendar", "Alias for /calendar",          "list_events",   {}),
     ("slack",    "slack",           "Send/read Slack messages",      "list_channels", {}),
-    # â”€â”€ Storage & Docs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Storage & Docs ─────────────────────────────────────────────────────────
     ("drive",    "google_drive",    "Search Google Drive",           "list_files",    {}),
     ("sheets",   "google_sheets",   "Google Sheets",                 "list_files",    {}),
-    # â”€â”€ GitHub (full) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── GitHub (full) ──────────────────────────────────────────────────────────
     ("github",   "github",          "GitHub repos, PRs, issues, code","list_repos",  {}),
     ("gh",       "github",          "Alias for /github",            "list_repos",    {}),
     ("repos",    "github",          "List your GitHub repos",        "list_repos",    {}),
     ("prs",      "github",          "List pull requests",            "list_prs",      {}),
     ("issues",   "github",          "List GitHub issues",            "list_issues",   {}),
     ("commits",  "github",          "List recent commits",           "list_commits",  {}),
-    # â”€â”€ Project Mgmt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Project Mgmt ───────────────────────────────────────────────────────────
     ("notion",   "notion",          "Search Notion pages",          "search",        {}),
     ("jira",     "jira",            "Manage Jira issues",           "list_issues",   {}),
     ("asana",    "asana",           "Manage Asana tasks",           "list_tasks",    {}),
     ("linear",   "linear",          "Manage Linear issues",         "list_issues",   {}),
-    # â”€â”€ CRM / Business â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── CRM / Business ─────────────────────────────────────────────────────────
     ("hubspot",  "hubspot",         "CRM contacts and deals",        "list_contacts", {}),
     ("airtable", "airtable",        "Airtable bases",               "list_bases",    {}),
     ("zoom",     "zoom",            "Create Zoom meetings",          "list_meetings", {}),
@@ -4492,7 +4634,7 @@ _DEFAULT_SLASH_COMMANDS = [
     ("http",     "http",            "Call a configured HTTP API",    "GET",           {}),
     ("graphql",  "graphql",         "Run a GraphQL query",           "query",         {}),
     ("webhook",  "webhook",         "Send a webhook payload",        "send",          {}),
-    # â”€â”€ Web â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Web ────────────────────────────────────────────────────────────────────
     ("web",      "web_search",      "Search the live web",          "search",        {}),
     ("search",   "web_search",      "Search the live web",          "search",        {}),
 ]
@@ -4506,57 +4648,57 @@ async def _seed_slash_commands():
                 " VALUES(?,?,?,?,?,?,?)",
                 (_new_id(), cmd, ctype, desc, action, json.dumps(params), _utcnow()))
 
-# â”€â”€ Platform Connector Catalog (mirrors frontend CONNECTOR_CATALOG) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Platform Connector Catalog (mirrors frontend CONNECTOR_CATALOG) ────────────
 _PLATFORM_CONNECTOR_CATALOG = [
     # Communication
-    ("gmail",           "Gmail",            "Communication", "ðŸ“§", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
-    ("slack",           "Slack",            "Communication", "ðŸ’¬", 1, ["SLACK_CLIENT_ID","SLACK_CLIENT_SECRET"]),
-    ("discord",         "Discord",          "Communication", "ðŸŽ®", 0, ["DISCORD_CLIENT_ID","DISCORD_CLIENT_SECRET"]),
-    ("microsoft_teams", "Microsoft Teams",  "Communication", "ðŸ”·", 1, ["MICROSOFT_CLIENT_ID","MICROSOFT_CLIENT_SECRET"]),
+    ("gmail",           "Gmail",            "Communication", "📧", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
+    ("slack",           "Slack",            "Communication", "💬", 1, ["SLACK_CLIENT_ID","SLACK_CLIENT_SECRET"]),
+    ("discord",         "Discord",          "Communication", "🎮", 0, ["DISCORD_CLIENT_ID","DISCORD_CLIENT_SECRET"]),
+    ("microsoft_teams", "Microsoft Teams",  "Communication", "🔷", 1, ["MICROSOFT_CLIENT_ID","MICROSOFT_CLIENT_SECRET"]),
     # Productivity
-    ("google_calendar", "Google Calendar",  "Productivity",  "ðŸ“…", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
-    ("google_drive",    "Google Drive",     "Productivity",  "ðŸ’¾", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
-    ("google_sheets",   "Google Sheets",    "Productivity",  "ðŸ“Š", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
-    ("notion",          "Notion",           "Productivity",  "ðŸ“", 1, ["NOTION_CLIENT_ID","NOTION_CLIENT_SECRET"]),
-    ("excel",           "Microsoft Excel",  "Productivity",  "ðŸ“—", 0, []),
-    ("outlook",         "Outlook",          "Productivity",  "ðŸ“¨", 1, ["MICROSOFT_CLIENT_ID","MICROSOFT_CLIENT_SECRET"]),
-    ("onedrive",        "OneDrive",         "Productivity",  "â˜ï¸", 1, ["MICROSOFT_CLIENT_ID","MICROSOFT_CLIENT_SECRET"]),
+    ("google_calendar", "Google Calendar",  "Productivity",  "📅", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
+    ("google_drive",    "Google Drive",     "Productivity",  "💾", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
+    ("google_sheets",   "Google Sheets",    "Productivity",  "📊", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
+    ("notion",          "Notion",           "Productivity",  "📝", 1, ["NOTION_CLIENT_ID","NOTION_CLIENT_SECRET"]),
+    ("excel",           "Microsoft Excel",  "Productivity",  "📗", 0, []),
+    ("outlook",         "Outlook",          "Productivity",  "📨", 1, ["MICROSOFT_CLIENT_ID","MICROSOFT_CLIENT_SECRET"]),
+    ("onedrive",        "OneDrive",         "Productivity",  "☁️", 1, ["MICROSOFT_CLIENT_ID","MICROSOFT_CLIENT_SECRET"]),
     # Developer
-    ("github",          "GitHub",           "Developer",     "ðŸ™", 1, ["GITHUB_CLIENT_ID","GITHUB_CLIENT_SECRET"]),
-    ("gitlab",          "GitLab",           "Developer",     "ðŸ¦Š", 1, ["GITLAB_CLIENT_ID","GITLAB_CLIENT_SECRET"]),
-    ("jira",            "Jira",             "Developer",     "ðŸ”µ", 1, ["ATLASSIAN_CLIENT_ID","ATLASSIAN_CLIENT_SECRET"]),
-    ("linear",          "Linear",           "Developer",     "ðŸ“", 1, ["LINEAR_CLIENT_ID","LINEAR_CLIENT_SECRET"]),
+    ("github",          "GitHub",           "Developer",     "🐙", 1, ["GITHUB_CLIENT_ID","GITHUB_CLIENT_SECRET"]),
+    ("gitlab",          "GitLab",           "Developer",     "🦊", 1, ["GITLAB_CLIENT_ID","GITLAB_CLIENT_SECRET"]),
+    ("jira",            "Jira",             "Developer",     "🔵", 1, ["ATLASSIAN_CLIENT_ID","ATLASSIAN_CLIENT_SECRET"]),
+    ("linear",          "Linear",           "Developer",     "📐", 1, ["LINEAR_CLIENT_ID","LINEAR_CLIENT_SECRET"]),
     # Project Mgmt
-    ("asana",           "Asana",            "Project Mgmt",  "âœ…", 1, ["ASANA_CLIENT_ID","ASANA_CLIENT_SECRET"]),
-    ("trello",          "Trello",           "Project Mgmt",  "ðŸ“‹", 0, []),
-    ("monday",          "Monday.com",       "Project Mgmt",  "ðŸ“…", 0, []),
-    ("clickup",         "ClickUp",          "Project Mgmt",  "ðŸŽ¯", 1, ["CLICKUP_CLIENT_ID","CLICKUP_CLIENT_SECRET"]),
+    ("asana",           "Asana",            "Project Mgmt",  "✅", 1, ["ASANA_CLIENT_ID","ASANA_CLIENT_SECRET"]),
+    ("trello",          "Trello",           "Project Mgmt",  "📋", 0, []),
+    ("monday",          "Monday.com",       "Project Mgmt",  "📅", 0, []),
+    ("clickup",         "ClickUp",          "Project Mgmt",  "🎯", 1, ["CLICKUP_CLIENT_ID","CLICKUP_CLIENT_SECRET"]),
     # CRM / Sales
-    ("hubspot",         "HubSpot",          "CRM / Sales",   "ðŸ§¡", 1, ["HUBSPOT_CLIENT_ID","HUBSPOT_CLIENT_SECRET"]),
-    ("salesforce",      "Salesforce",       "CRM / Sales",   "â˜ï¸", 1, ["SALESFORCE_CLIENT_ID","SALESFORCE_CLIENT_SECRET"]),
-    ("stripe",          "Stripe",           "CRM / Sales",   "ðŸ’³", 0, ["STRIPE_SECRET_KEY"]),
+    ("hubspot",         "HubSpot",          "CRM / Sales",   "🧡", 1, ["HUBSPOT_CLIENT_ID","HUBSPOT_CLIENT_SECRET"]),
+    ("salesforce",      "Salesforce",       "CRM / Sales",   "☁️", 1, ["SALESFORCE_CLIENT_ID","SALESFORCE_CLIENT_SECRET"]),
+    ("stripe",          "Stripe",           "CRM / Sales",   "💳", 0, ["STRIPE_SECRET_KEY"]),
     # Analytics
-    ("power_bi",        "Power BI",         "Analytics",     "ðŸ“ˆ", 1, ["MICROSOFT_CLIENT_ID","MICROSOFT_CLIENT_SECRET"]),
-    ("airtable",        "Airtable",         "Analytics",     "ðŸ—‚ï¸", 1, ["AIRTABLE_CLIENT_ID","AIRTABLE_CLIENT_SECRET"]),
-    ("bigquery",        "BigQuery",         "Analytics",     "ðŸ”¬", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
+    ("power_bi",        "Power BI",         "Analytics",     "📈", 1, ["MICROSOFT_CLIENT_ID","MICROSOFT_CLIENT_SECRET"]),
+    ("airtable",        "Airtable",         "Analytics",     "🗂️", 1, ["AIRTABLE_CLIENT_ID","AIRTABLE_CLIENT_SECRET"]),
+    ("bigquery",        "BigQuery",         "Analytics",     "🔬", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
     # Storage
-    ("dropbox",         "Dropbox",          "Storage",       "ðŸ“¦", 1, ["DROPBOX_CLIENT_ID","DROPBOX_CLIENT_SECRET"]),
-    ("box",             "Box",              "Storage",       "ðŸ“«", 1, ["BOX_CLIENT_ID","BOX_CLIENT_SECRET"]),
-    ("s3",              "Amazon S3",        "Storage",       "ðŸª£", 0, []),
+    ("dropbox",         "Dropbox",          "Storage",       "📦", 1, ["DROPBOX_CLIENT_ID","DROPBOX_CLIENT_SECRET"]),
+    ("box",             "Box",              "Storage",       "📫", 1, ["BOX_CLIENT_ID","BOX_CLIENT_SECRET"]),
+    ("s3",              "Amazon S3",        "Storage",       "🪣", 0, []),
     # Meetings
-    ("zoom",            "Zoom",             "Meetings",      "ðŸ“¹", 1, ["ZOOM_CLIENT_ID","ZOOM_CLIENT_SECRET"]),
-    ("google_meet",     "Google Meet",      "Meetings",      "ðŸ“º", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
+    ("zoom",            "Zoom",             "Meetings",      "📹", 1, ["ZOOM_CLIENT_ID","ZOOM_CLIENT_SECRET"]),
+    ("google_meet",     "Google Meet",      "Meetings",      "📺", 1, ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET"]),
     # Automation
-    ("zapier",          "Zapier",           "Automation",    "âš¡", 0, []),
-    ("make",            "Make",             "Automation",    "ðŸ”§", 0, []),
+    ("zapier",          "Zapier",           "Automation",    "⚡", 0, []),
+    ("make",            "Make",             "Automation",    "🔧", 0, []),
     ("n8n",             "n8n Cloud",        "Automation",    "https://i.ibb.co/jPBvQxWj/download-8.png", 0, []),
     ("n8n_local",       "n8n Local",        "Automation",    "https://i.ibb.co/jPBvQxWj/download-8.png", 0, []),
     # Recruiting
-    ("indeed",          "Indeed",           "Recruiting",    "ðŸ’¼", 0, []),
-    ("linkedin",        "LinkedIn",         "Recruiting",    "ðŸ”—", 1, ["LINKEDIN_CLIENT_ID","LINKEDIN_CLIENT_SECRET"]),
+    ("indeed",          "Indeed",           "Recruiting",    "💼", 0, []),
+    ("linkedin",        "LinkedIn",         "Recruiting",    "🔗", 1, ["LINKEDIN_CLIENT_ID","LINKEDIN_CLIENT_SECRET"]),
     # E-commerce
-    ("shopify",         "Shopify",          "E-commerce",    "ðŸ›ï¸", 0, []),
-    ("woocommerce",     "WooCommerce",      "E-commerce",    "ðŸ›’", 0, []),
+    ("shopify",         "Shopify",          "E-commerce",    "🛍️", 0, []),
+    ("woocommerce",     "WooCommerce",      "E-commerce",    "🛒", 0, []),
 ]
 
 def _calc_setup_status(env_keys: list) -> str:
@@ -4592,11 +4734,11 @@ async def _seed_platform_connectors():
                 (name, cat, icon, requires_oauth, json.dumps(env_keys), status, now, ctype))
 
 _SIDEBAR_FEATURE_CATALOG = [
-    ("agents",     "Agent Jobs",      "ðŸ¤–",  "agents",     20),
-    ("playground", "Playground",      "âš¡",  "playground", 30),
+    ("agents",     "Agent Jobs",      "🤖",  "agents",     20),
+    ("playground", "Playground",      "⚡",  "playground", 30),
     ("multimodel", "Multi-Model",     "MM",  "multimodel", 40),
-    ("websites",   "Website Builder", "ðŸŒ",  "websites",   50),
-    ("code",       "Code Runner",     "ðŸ’»",  "code",       60),
+    ("websites",   "Website Builder", "🌐",  "websites",   50),
+    ("code",       "Code Runner",     "💻",  "code",       60),
 ]
 _WORKSPACE_TOOL_FEATURE_KEYS = {"documents", "memory", "connectors", "mcp", "livy", "apikeys"}
 _SIDEBAR_FEATURE_KEYS = {k for k, *_ in _SIDEBAR_FEATURE_CATALOG}
@@ -4873,7 +5015,7 @@ def _apply_slash_rest(ctype: str, action: str, params: Dict, rest: str) -> Tuple
     if not rest_l:
         return action, out
 
-    # â”€â”€ Gmail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Gmail ──────────────────────────────────────────────────────────────────
     if ctype == "gmail":
         out["count"] = _extract_first_int(rest_l, int(out.get("count", 10) or 10))
         if any(k in rest_l for k in ("reply", "respond")):
@@ -4899,7 +5041,7 @@ def _apply_slash_rest(ctype: str, action: str, params: Dict, rest: str) -> Tuple
             to_m = re.search(r"\bto(?:\s*:\s*|\s+)([^\s,;]+@[^\s,;]+)", rest, flags=re.IGNORECASE)
             if to_m:
                 out["to"] = to_m.group(1).strip().rstrip(",;")
-            # subject â€” stops before body/message/saying/attach keyword
+            # subject — stops before body/message/saying/attach keyword
             subj_m = re.search(
                 r"\bsubject(?:\s*:\s*|\s+)(.+?)(?=\s+(?:body|message|saying|attach)(?:\s*:\s*|\s+)|\s*$)",
                 rest, flags=re.IGNORECASE | re.DOTALL)
@@ -4915,7 +5057,7 @@ def _apply_slash_rest(ctype: str, action: str, params: Dict, rest: str) -> Tuple
             body_m = body_explicit or body_saying
             if body_m:
                 out["body"] = body_m.group(1).strip()
-            # optional attachment path â€” "attach: /path/file.pdf"
+            # optional attachment path — "attach: /path/file.pdf"
             attach_m = re.search(r"\battach(?:ment)?(?:\s*:\s*|\s+)([^\s]+)", rest, flags=re.IGNORECASE)
             if attach_m:
                 out["attachment_path"] = attach_m.group(1).strip()
@@ -4926,7 +5068,7 @@ def _apply_slash_rest(ctype: str, action: str, params: Dict, rest: str) -> Tuple
             elif "unread" in rest_l: out["query"] = "is:unread"
             elif "sent" in rest_l: out["query"] = "in:sent"
 
-    # â”€â”€ Google Calendar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Google Calendar ─────────────────────────────────────────────────────────
     elif ctype == "google_calendar":
         if any(k in rest_l for k in ("create", "add", "new", "schedule")):
             action = "create_event"
@@ -4948,7 +5090,7 @@ def _apply_slash_rest(ctype: str, action: str, params: Dict, rest: str) -> Tuple
             out["count"] = _extract_first_int(rest_l, 10)
             if rest_l.strip(): out["query"] = rest.strip()
 
-    # â”€â”€ Slack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Slack ───────────────────────────────────────────────────────────────────
     elif ctype == "slack":
         if any(k in rest_l for k in ("send", "message", "post", "say")):
             action = "send_message"
@@ -4968,7 +5110,7 @@ def _apply_slash_rest(ctype: str, action: str, params: Dict, rest: str) -> Tuple
         else:
             action = "list_channels"
 
-    # â”€â”€ GitHub (natural language routing) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── GitHub (natural language routing) ────────────────────────────────────────
     elif ctype == "github":
         # Extract repo pattern: owner/repo or just repo name
         repo_m = re.search(r"\b([\w.-]+/[\w.-]+)\b", rest)
@@ -5039,7 +5181,7 @@ def _apply_slash_rest(ctype: str, action: str, params: Dict, rest: str) -> Tuple
             action = "list_repos"
             out["per_page"] = _extract_first_int(rest_l, 20)
 
-    # â”€â”€ Notion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Notion ──────────────────────────────────────────────────────────────────
     elif ctype == "notion":
         if any(k in rest_l for k in ("create", "new", "add")):
             action = "create_page"
@@ -5048,7 +5190,7 @@ def _apply_slash_rest(ctype: str, action: str, params: Dict, rest: str) -> Tuple
             action = "search"
             out["query"] = rest.strip()
 
-    # â”€â”€ Jira â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Jira ────────────────────────────────────────────────────────────────────
     elif ctype == "jira":
         if any(k in rest_l for k in ("create", "new", "add")):
             action = "create_issue"
@@ -5056,7 +5198,7 @@ def _apply_slash_rest(ctype: str, action: str, params: Dict, rest: str) -> Tuple
         else:
             action = "list_issues"
 
-    # â”€â”€ Asana â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Asana ───────────────────────────────────────────────────────────────────
     elif ctype == "asana":
         if any(k in rest_l for k in ("create", "new", "add")):
             action = "create_task"
@@ -5103,9 +5245,9 @@ async def _execute_slash(user_id: str, command: str, rest: str) -> Optional[Dict
         out["error"] = result.get("error")
     return out
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§15  VOICE (LiveKit + Whisper STT + PlayAI TTS)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §15  VOICE (LiveKit + Whisper STT + PlayAI TTS)
+# ══════════════════════════════════════════════════════════════════════════════
 
 def _lk_available() -> bool:
     return bool(LIVEKIT_API_KEY and LIVEKIT_API_SECRET and LIVEKIT_URL)
@@ -5147,9 +5289,9 @@ async def _stt_transcribe(audio_bytes: bytes, mime_type: str = "audio/webm") -> 
     except Exception as e:
         raise HTTPException(500, f"Transcription failed: {e}")
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§16  WEBSOCKET MANAGER
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §16  WEBSOCKET MANAGER
+# ══════════════════════════════════════════════════════════════════════════════
 
 class ConnectionManager:
     def __init__(self): self._connections: Dict[str, Set[WebSocket]] = defaultdict(set)
@@ -5181,13 +5323,13 @@ async def _push_notification(user_id: Optional[str], title: str, message: str,
     if is_broadcast: await ws_manager.broadcast(payload)
     elif user_id: await ws_manager.send_to_user(user_id, payload)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§17  WEBSITE BUILDER
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §17  WEBSITE BUILDER
+# ══════════════════════════════════════════════════════════════════════════════
 
 _WEB_SYSTEM = """You are an elite frontend developer. Generate a COMPLETE, SELF-CONTAINED single-file HTML website.
 All CSS in <style>. All JS in <script>. CDN from Google Fonts / cdnjs.cloudflare.com only.
-Fully functional, visually stunning, fully responsive. No Lorem Ipsum. Return ONLY raw HTML â€” no markdown fences."""
+Fully functional, visually stunning, fully responsive. No Lorem Ipsum. Return ONLY raw HTML — no markdown fences."""
 
 async def _build_website(description: str, title: str, style: str, model_id: str,
                          pages: Optional[List[str]] = None,
@@ -5197,7 +5339,7 @@ async def _build_website(description: str, title: str, style: str, model_id: str
     page_text = ", ".join([p.strip() for p in (pages or []) if p and p.strip()][:8])
     prompt = (
         f"Build a complete website.\nTitle: {title}\nDescription: {description}\n"
-        f"Style: {style} â€” {hint}\n"
+        f"Style: {style} — {hint}\n"
         f"Suggested pages/sections: {page_text or 'choose the best sections for this brief'}\n"
         f"Color palette: {color_palette or 'choose a polished domain-appropriate palette'}\n"
         f"Extra instructions: {extra_instructions or 'none'}\n"
@@ -5209,9 +5351,9 @@ async def _build_website(description: str, title: str, style: str, model_id: str
     html = re.sub(r"^```html\s*","",result.strip(),flags=re.IGNORECASE)
     return re.sub(r"```\s*$","",html.strip()).strip()
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§18  MCP SERVER ENGINE
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §18  MCP SERVER ENGINE
+# ══════════════════════════════════════════════════════════════════════════════
 
 async def _mcp_list_tools(server_id: str) -> List[Dict]:
     row = await db_fetchone("SELECT * FROM mcp_servers WHERE id=? AND is_active=1", (server_id,))
@@ -5244,9 +5386,9 @@ async def _mcp_call_tool(server_id: str, tool_name: str, tool_args: Dict) -> Dic
     if "error" in result: raise ValueError(result["error"].get("message","MCP error"))
     return result.get("result",{})
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§19  APACHE LIVY ENGINE
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §19  APACHE LIVY ENGINE
+# ══════════════════════════════════════════════════════════════════════════════
 
 def _livy_headers() -> Dict:
     headers = {"Content-Type":"application/json","Accept":"application/json"}
@@ -5285,14 +5427,17 @@ async def _livy_request(method: str, path: str, body: Optional[Dict] = None) -> 
             except Exception: raise ValueError(f"Livy HTTP {e.code}: {raw.decode('utf-8','replace')[:300]}")
     return await asyncio.get_running_loop().run_in_executor(_executor, _call)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§20  PYDANTIC MODELS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §20  PYDANTIC MODELS
+# ══════════════════════════════════════════════════════════════════════════════
 
 class AuthIn(BaseModel):
     email: str
     password: str
     full_name: str = ""
+
+class EmailOnlyIn(BaseModel):
+    email: str
 
 class RefreshIn(BaseModel):
     refresh_token: str
@@ -5569,9 +5714,9 @@ class LivyBatchCreate(BaseModel):
     args: List[str] = []
     conf: Dict = {}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§21  APP FACTORY
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §21  APP FACTORY
+# ══════════════════════════════════════════════════════════════════════════════
 
 app = FastAPI(title="JAZZ AI", version="14.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS,
@@ -5585,7 +5730,7 @@ async def _request_logger(request: Request, call_next):
     t0 = time.time(); resp = await call_next(request)
     ms = int((time.time()-t0)*1000); path = request.url.path
     if path not in ("/health","/favicon.ico") and not path.startswith("/static") and not path.startswith("/preview"):
-        logger.info("%s %s â†’ %d (%dms)", request.method, path, resp.status_code, ms)
+        logger.info("%s %s → %d (%dms)", request.method, path, resp.status_code, ms)
     resp.headers["ngrok-skip-browser-warning"] = "true"
     return resp
 
@@ -5604,55 +5749,96 @@ async def serve_frontend():
         headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
     )
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§22  AUTH ROUTES
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §22  AUTH ROUTES
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/platform/status")
 async def platform_status():
     return await _platform_status()
 
+@app.get("/auth/supabase-config")
+async def auth_supabase_config():
+    return _supabase_public_config()
+
 @app.post("/auth/register")
-async def auth_register(body: AuthIn):
+async def auth_register(request: Request, body: AuthIn):
     maintenance_on, maintenance_msg = await _maintenance_enabled_message()
     if maintenance_on:
         raise HTTPException(503, maintenance_msg)
-    if await db_fetchone("SELECT id FROM users WHERE email=?", (body.email.lower(),)):
-        raise HTTPException(400, "Email already registered")
+    email = _validated_email(body.email)
+    _validated_password(body.password)
+    if await db_fetchone("SELECT id FROM users WHERE email=?", (email,)):
+        raise HTTPException(400, "Email already registered. Sign in or resend verification.")
     uid = _new_id(); now = _utcnow()
+    full_name = (body.full_name or email.split("@")[0]).strip()[:120]
+    is_verified = 0 if _email_verification_required() else 1
     await db_execute(
         "INSERT INTO users(id,email,password_hash,full_name,role,subscription,is_active,is_verified,created_at,updated_at)"
        " VALUES(?,?,?,?,?,?,?,?,?,?)",
         (
             uid,
-            body.email.lower(),
+            email,
             _hash_pw(body.password),
-            body.full_name or body.email.split("@")[0],
+            full_name,
             "client",
             "free",
             1,
-            1,
+            is_verified,
             now,
             now,
         ),
     )
+    if _email_verification_required():
+        link = await _create_email_verification_link(uid, email, request)
+        logger.info("[AUTH] Verification link for %s: %s", email, link)
+        return _verification_response(email, link)
     raw = f"jzr_{secrets.token_urlsafe(48)}"; h = _hash_token(raw)
     exp = (datetime.now(timezone.utc)+timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)).isoformat()
     await db_execute("INSERT INTO refresh_tokens(id,user_id,token_hash,expires_at,created_at) VALUES(?,?,?,?,?)",
                      (_new_id(), uid, h, exp, now))
-    return {"access_token":_make_access_token(uid,"client",body.email.lower(),"free"),
+    return {"access_token":_make_access_token(uid,"client",email,"free"),
             "refresh_token":raw,"token_type":"bearer",
-            "user":{"id":uid,"email":body.email.lower(),"role":"client","subscription":"free"}}
+            "user":{"id":uid,"email":email,"full_name":full_name,"role":"client","subscription":"free","is_verified":is_verified}}
 
 @app.post("/auth/signup")
-async def auth_signup(body: AuthIn):
-    return await auth_register(body)
+async def auth_signup(request: Request, body: AuthIn):
+    return await auth_register(request, body)
+
+@app.post("/auth/resend-verification")
+async def auth_resend_verification(request: Request, body: EmailOnlyIn):
+    email = _validated_email(body.email)
+    user = await db_fetchone("SELECT id,email,is_verified FROM users WHERE email=?", (email,))
+    generic = {"ok": True, "message": "If this account needs verification, a fresh link has been created."}
+    if not user:
+        return generic
+    if int(user.get("is_verified") or 0):
+        return {"ok": True, "already_verified": True, "message": "Email is already verified. You can sign in."}
+    link = await _create_email_verification_link(user["id"], email, request)
+    logger.info("[AUTH] Verification link for %s: %s", email, link)
+    return _verification_response(email, link)
+
+@app.get("/auth/verify-email")
+async def auth_verify_email(token: str = ""):
+    ok, message = await _verify_email_token(token)
+    if ok:
+        return _auth_html_page("Email verified", f"{message} is verified. You can sign in now.", True)
+    return _auth_html_page("Verification failed", message, False)
 
 @app.post("/auth/login")
 async def auth_login(body: AuthIn):
-    user = await db_fetchone("SELECT * FROM users WHERE email=? AND is_active=1", (body.email.lower(),))
+    email = _validated_email(body.email)
+    user = await db_fetchone("SELECT * FROM users WHERE email=? AND is_active=1", (email,))
     if not user or not _verify_pw(body.password, user["password_hash"]):
         raise HTTPException(401, "Invalid credentials")
+    if _email_verification_required() and not int(user.get("is_verified") or 0):
+        raise HTTPException(
+            403,
+            {
+                "code": "email_not_verified",
+                "message": "Please verify your email before signing in. Use Resend verification if the link expired.",
+            },
+        )
     maintenance_on, maintenance_msg = await _maintenance_enabled_message()
     if maintenance_on and user["role"] != "admin":
         raise HTTPException(503, maintenance_msg)
@@ -5664,7 +5850,7 @@ async def auth_login(body: AuthIn):
                      (_new_id(), user["id"], h, exp, now))
     return {"access_token":_make_access_token(user["id"],user["role"],user["email"],user["subscription"]),
             "refresh_token":raw,"token_type":"bearer",
-            "user":{k:user[k] for k in ("id","email","full_name","role","subscription","memory_enabled")}}
+            "user":{k:user[k] for k in ("id","email","full_name","role","subscription","memory_enabled","is_verified")}}
 
 @app.post("/auth/refresh")
 async def auth_refresh(body: RefreshIn):
@@ -5689,7 +5875,7 @@ async def auth_refresh(body: RefreshIn):
 @app.get("/auth/me")
 async def auth_me(user: Dict = Depends(_get_current_user)):
     row = await db_fetchone(
-        "SELECT id,email,full_name,role,subscription,memory_enabled,timezone,created_at FROM users WHERE id=?",
+        "SELECT id,email,full_name,role,subscription,memory_enabled,timezone,is_verified,created_at FROM users WHERE id=?",
         (user.get("id") or user.get("sub"),))
     return row or {}
 
@@ -5705,6 +5891,7 @@ async def auth_change_password(body: ChangePasswordReq, user: Dict = Depends(_ge
     row = await db_fetchone("SELECT password_hash FROM users WHERE id=?", (uid,))
     if not row or not _verify_pw(body.current_password, row["password_hash"]):
         raise HTTPException(400, "Wrong current password")
+    _validated_password(body.new_password)
     await db_execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
                      (_hash_pw(body.new_password), _utcnow(), uid))
     return {"ok":True}
@@ -5721,9 +5908,9 @@ async def auth_update_profile(req: ProfileUpdate, user: Dict = Depends(_get_curr
         await db_execute(f"UPDATE users SET {','.join(updates)} WHERE id=?", tuple(vals))
     return {"ok":True}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§23  CHAT SESSIONS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §23  CHAT SESSIONS
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/sessions")
 async def list_sessions(limit: int = 60, offset: int = 0, archived: bool = False, user: Dict = Depends(_get_current_user)):
@@ -5924,7 +6111,7 @@ async def export_session(sid: str, format: str = "markdown", user: Dict = Depend
                                  headers={"Content-Disposition":f'attachment; filename="chat_{sid[:8]}.json"'})
     elif format == "txt":
         lines = [f"# {title}\n"]
-        for m in msgs: lines.append(f"[{m['role'].upper()} â€” {m['created_at']}]\n{m['content']}\n")
+        for m in msgs: lines.append(f"[{m['role'].upper()} — {m['created_at']}]\n{m['content']}\n")
         return StreamingResponse(io.StringIO("\n".join(lines)), media_type="text/plain",
                                  headers={"Content-Disposition":f'attachment; filename="chat_{sid[:8]}.txt"'})
     else:  # markdown (default)
@@ -5934,9 +6121,9 @@ async def export_session(sid: str, format: str = "markdown", user: Dict = Depend
         return StreamingResponse(io.StringIO("\n".join(lines)), media_type="text/markdown",
                                  headers={"Content-Disposition":f'attachment; filename="chat_{sid[:8]}.md"'})
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§24  CHAT â€” STREAMING SSE
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §24  CHAT — STREAMING SSE
+# ══════════════════════════════════════════════════════════════════════════════
 
 async def _stream_text(text: str, chunk_size: int = 8):
     for i in range(0, len(text), chunk_size):
@@ -6499,9 +6686,9 @@ async def multi_model_chat(req: MultiModelChatReq, user: Dict = Depends(_get_cur
     results = await asyncio.gather(*[_call_one(m) for m in model_ids])
     return {"session_id":sid,"message":req.message,"responses":list(results),"charged_messages":len(model_ids)}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§25  WEBSOCKET
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §25  WEBSOCKET
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(user_id: str, ws: WebSocket) -> None:
@@ -6526,9 +6713,9 @@ async def websocket_endpoint(user_id: str, ws: WebSocket) -> None:
     except Exception as e: logger.warning("[WS] %s error: %s", user_id[:8], e)
     finally: ws_manager.disconnect(user_id, ws)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§26  DOCUMENTS / RAG
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §26  DOCUMENTS / RAG
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/documents/upload")
 async def upload_document(file: UploadFile = File(...), background_tasks: BackgroundTasks = None,
@@ -6598,9 +6785,9 @@ async def get_skill(skill_id: str, user: Dict = Depends(_get_current_user)):
         raise HTTPException(404, "Skill not found")
     return _normalise_skill_row(row)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§27  MEMORY
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §27  MEMORY
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/memories")
 async def list_memories(user: Dict = Depends(_get_current_user)):
@@ -6630,9 +6817,9 @@ async def clear_memories(user: Dict = Depends(_get_current_user)):
     await db_execute("UPDATE memories SET is_active=0 WHERE user_id=?",(uid,))
     return {"ok":True}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§28  CONNECTORS â€” OAUTH FLOWS (FIXED FULL PKCE)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §28  CONNECTORS — OAUTH FLOWS (FIXED FULL PKCE)
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/connectors/oauth/{app_id}/init")
 async def oauth_init(app_id: str, request: Request,
@@ -6687,7 +6874,7 @@ async def oauth_init(app_id: str, request: Request,
     expired = [k for k,v in _pending_oauth.items() if time.time()-v.get("ts",0) > 1800]
     for k in expired: _pending_oauth.pop(k,None); _completed_oauth.pop(k,None)
 
-    # Save state to DB FIRST (primary source â€” survives server restarts & multi-worker)
+    # Save state to DB FIRST (primary source — survives server restarts & multi-worker)
     exp_at = (datetime.now(timezone.utc)+timedelta(minutes=30)).isoformat()
     await db_execute(
         "INSERT OR REPLACE INTO oauth_states(id,user_id,connector_type,state,code_verifier,redirect_uri,expires_at,created_at)"
@@ -6701,11 +6888,11 @@ async def oauth_init(app_id: str, request: Request,
         "client_state": client_state, "ts": time.time()
     }
 
-    # Build authorize URL â€” CRITICAL: include response_type=code
+    # Build authorize URL — CRITICAL: include response_type=code
     params: Dict = {
         "client_id":     client_id,
         "redirect_uri":  redirect_uri,
-        "response_type": "code",          # â† Fixed: was missing in some connectors
+        "response_type": "code",          # ← Fixed: was missing in some connectors
         "state":         state,
     }
     scope = prov.get("scope","")
@@ -6862,7 +7049,7 @@ async def oauth_callback(app_id: str, request: Request,
 
     # Clean up DB state
     await db_execute("DELETE FROM oauth_states WHERE state=?", (state,))
-    logger.info("[OAUTH] âœ… %s connected for user %s", connector_type, user_id)
+    logger.info("[OAUTH] ✅ %s connected for user %s", connector_type, user_id)
 
     _completed_oauth[state] = {"connected":True,"connector_type":connector_type,"app_name":app_name}
     if pending.get("client_state"):
@@ -6894,7 +7081,7 @@ async def oauth_status(app_id: str, state: str = "", user: Dict = Depends(_get_c
         return JSONResponse({"connected":True,"connector_type":app_id})
     return JSONResponse({"connected":False})
 
-# â”€â”€ Legacy + New Connector CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Legacy + New Connector CRUD ────────────────────────────────────────────────
 @app.get("/connectors")
 async def list_connectors(user: Dict = Depends(_get_current_user)):
     uid = user.get("id") or user.get("sub","")
@@ -6918,7 +7105,7 @@ async def list_connectors(user: Dict = Depends(_get_current_user)):
 
 @app.get("/connectors/connected")
 async def list_connected_types(user: Dict = Depends(_get_current_user)):
-    """Returns a list of connector_type strings the user has connected â€” used by the chat UI."""
+    """Returns a list of connector_type strings the user has connected — used by the chat UI."""
     uid = user.get("id") or user.get("sub","")
     legacy = await db_fetchall(
         "SELECT connector_type FROM connectors WHERE user_id=? AND is_active=1", (uid,))
@@ -6962,7 +7149,7 @@ async def delete_connector(connector_type_or_id: str, user: Dict = Depends(_get_
     await db_execute("DELETE FROM connectors WHERE id=?", (row["id"],))
     return {"ok":True}
 
-# â”€â”€ Smart Connectors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Smart Connectors ───────────────────────────────────────────────────────────
 @app.get("/smart-connectors")
 async def list_smart_connectors(user: Dict = Depends(_get_current_user)):
     uid = user.get("id") or user.get("sub","")
@@ -7102,9 +7289,9 @@ async def delete_smart_connector(cid: str, user: Dict = Depends(_get_current_use
     raise HTTPException(404, "Connector not found")
     return {"ok":True}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§29  API KEYS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §29  API KEYS
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api-keys")
 async def list_api_keys(user: Dict = Depends(_get_current_user)):
@@ -7134,9 +7321,9 @@ async def delete_api_key(kid: str, user: Dict = Depends(_get_current_user)):
     await db_execute("DELETE FROM api_keys WHERE id=? AND user_id=?",(kid,uid))
     return {"ok":True}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§30  AGENT JOBS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §30  AGENT JOBS
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/agent/jobs")
 @app.get("/agent-jobs")
@@ -7261,9 +7448,9 @@ async def agent_run_stream(req: AgentRunReq, user: Dict = Depends(_get_current_u
     return StreamingResponse(_gen(), media_type="text/event-stream",
                              headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no","Connection":"keep-alive"})
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§31  SYSTEM ACCESS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §31  SYSTEM ACCESS
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/system/shell")
 async def run_shell_cmd(req: ShellReq, user: Dict = Depends(_get_current_user)):
@@ -7320,9 +7507,9 @@ async def clear_code_history(user: Dict = Depends(_get_current_user)):
     await db_execute("DELETE FROM code_run_logs WHERE user_id=?", (uid,))
     return {"ok": True}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§32  WEBSITES
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §32  WEBSITES
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/websites/build")
 async def build_website_ep(req: WebsiteCreate, user: Dict = Depends(_get_current_user)):
@@ -7432,9 +7619,9 @@ async def delete_website(wid: str, user: Dict = Depends(_get_current_user)):
     await db_execute("DELETE FROM websites WHERE id=?",(wid,))
     return {"ok":True}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§33  VOICE / LIVEKIT
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §33  VOICE / LIVEKIT
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/voice/token")
 async def get_voice_token(req: VoiceTokenReq, user: Dict = Depends(_get_current_user)):
@@ -7555,9 +7742,9 @@ async def text_to_speech_get(text: str = "", voice: str = TTS_VOICE, user: Dict 
     if not text.strip(): raise HTTPException(400, "text is required")
     return await text_to_speech({"text": text, "voice": voice}, user)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§34  NOTIFICATIONS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §34  NOTIFICATIONS
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/notifications")
 async def list_notifications(user: Dict = Depends(_get_current_user)):
@@ -7580,9 +7767,9 @@ async def mark_all_read(user: Dict = Depends(_get_current_user)):
     await db_execute("UPDATE notifications SET is_read=1 WHERE user_id=?",(uid,))
     return {"ok":True}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§35  USER SETTINGS & USAGE
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §35  USER SETTINGS & USAGE
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/settings")
 async def get_settings(user: Dict = Depends(_get_current_user)):
@@ -7796,9 +7983,9 @@ async def gdpr_delete(confirm: str = "", user: Dict = Depends(_get_current_user)
     await db_execute("DELETE FROM users WHERE id=?",(uid,))
     return {"ok":True,"message":"Account deleted"}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§36  MCP SERVERS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §36  MCP SERVERS
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/mcp-servers")
 async def list_mcp_servers(user: Dict = Depends(_get_current_user)):
@@ -7826,9 +8013,9 @@ async def list_mcp_server_tools(server_id: str, user: Dict = Depends(_get_curren
     tools = await _mcp_list_tools(server_id)
     return {"server":row["name"],"tools":tools}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§37  APACHE LIVY ROUTES
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §37  APACHE LIVY ROUTES
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/livy/health")
 async def livy_health(user: Dict = Depends(_get_current_user)):
@@ -7884,9 +8071,9 @@ async def livy_get_batch(batch_id: int, user: Dict = Depends(_get_current_user))
     try: return await _livy_request("GET",f"/batches/{batch_id}")
     except Exception as e: raise HTTPException(502, f"Livy error: {e}")
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§38  ADMIN ROUTES
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §38  ADMIN ROUTES
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/admin/stats")
 async def admin_stats(user: Dict = Depends(_require_admin)):
@@ -9130,8 +9317,7 @@ async def admin_security_user_action(uid: str, action: str, body: dict = None,
         await db_execute("UPDATE refresh_tokens SET revoked=1 WHERE user_id=? AND revoked=0", (uid,))
     elif action == "reset_password":
         pw = str(body.get("password") or "").strip()
-        if len(pw) < 8:
-            raise HTTPException(400, "Password must be at least 8 characters")
+        _validated_password(pw)
         await db_execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?", (_hash_pw(pw), now, uid))
         await db_execute("UPDATE refresh_tokens SET revoked=1 WHERE user_id=? AND revoked=0", (uid,))
         detail["password_changed"] = True
@@ -9238,9 +9424,9 @@ async def get_logs(admin: Dict = Depends(_require_admin)):
     try: return {"logs":Path("jazz.log").read_text(encoding="utf-8").splitlines()[-500:]}
     except FileNotFoundError: return {"logs":[]}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§39  HEALTH & INFO
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §39  HEALTH & INFO
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/health")
 async def health():
@@ -9410,7 +9596,7 @@ def _rows_from_generated_text(text: str) -> List[List[str]]:
                 return [[str(c).strip() for c in row] for row in rows]
         except Exception:
             pass
-    bullets = [re.sub(r"^[-*â€¢\d.)\s]+", "", ln).strip() for ln in lines]
+    bullets = [re.sub(r"^[-*•\d.)\s]+", "", ln).strip() for ln in lines]
     bullets = [b for b in bullets if b]
     return [["Item"], *[[b] for b in bullets[:500]]] if bullets else [["Content"], [text[:32000]]]
 
@@ -9917,9 +10103,9 @@ async def download_generated_or_uploaded_file(stored_name: str, user: Dict = Dep
     download_name = re.sub(r"^[a-z0-9_\\-]{8,40}_", "", safe, flags=re.I) or safe
     return FileResponse(str(path), media_type="application/octet-stream", filename=download_name)
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§39b  PLATFORM CONNECTOR MANAGEMENT (ADMIN)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §39b  PLATFORM CONNECTOR MANAGEMENT (ADMIN)
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/admin/platform-connectors")
 async def admin_list_platform_connectors(admin: Dict = Depends(_require_admin)):
@@ -10006,19 +10192,19 @@ async def admin_bulk_toggle_connectors(body: dict, admin: Dict = Depends(_requir
 
 @app.get("/platform-connectors")
 async def get_enabled_platform_connectors(user: Dict = Depends(_get_current_user)):
-    """Returns only admin-enabled connector types â€” used by the client UI."""
+    """Returns only admin-enabled connector types — used by the client UI."""
     rows = await db_fetchall(
         "SELECT connector_type, display_name, category, icon, setup_status"
         " FROM platform_connectors WHERE is_enabled=1 ORDER BY category, display_name")
     return {"enabled": [r["connector_type"] for r in rows], "connectors": rows}
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Â§40  ENTRY POINT
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════════════════════
+# §40  ENTRY POINT
+# ══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    logger.info("ðŸŽµ Starting JAZZ AI v14.0 on port %d", port)
+    logger.info("🎵 Starting JAZZ AI v14.0 on port %d", port)
     uvicorn.run(app, host="0.0.0.0", port=port,
                 reload=False, log_level="info", timeout_keep_alive=75)
