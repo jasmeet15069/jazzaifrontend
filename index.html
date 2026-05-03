@@ -140,11 +140,17 @@ body:not(.light) #hljs-theme-light{display:none}
 .sidebar-new-chat:hover{border-color:#7c6ff7;color:#fff}
 
 /* ── Session list ── */
-.session-item{padding:8px 10px;border-radius:6px;cursor:pointer;font-size:12.5px;color:#9090b0;transition:.15s;position:relative}
+.session-item{padding:10px;border-radius:8px;cursor:pointer;font-size:12.5px;color:#9090b0;transition:.15s;position:relative}
 .session-item:hover{background:#111124;color:#e4e4f4}
 .session-item.active{background:#111124;color:#e4e4f4}
-.sess-actions{display:flex;gap:4px;opacity:0;transition:.15s}
-.session-item:hover .sess-actions{opacity:1}
+.sess-actions{display:flex;gap:5px;opacity:.82;transition:.15s;align-items:center}
+.sess-action-btn,.sess-actions > span{width:28px!important;height:28px!important;padding:0!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;border-radius:8px!important;border:1px solid rgba(124,111,247,.16)!important;background:rgba(124,111,247,.08)!important;color:#c8c3ff!important;font-size:15px!important;line-height:1!important;cursor:pointer!important;transition:.15s!important}
+.sess-action-btn:hover,.sess-actions > span:hover{background:rgba(124,111,247,.18)!important;border-color:rgba(124,111,247,.45)!important;color:#fff!important;transform:translateY(-1px)}
+.session-item.active .sess-action-btn,.session-item.active .sess-actions > span{background:rgba(124,111,247,.13)!important;border-color:rgba(124,111,247,.28)!important;color:#fff!important}
+@media(pointer:fine){
+  .sess-actions{opacity:0}
+  .session-item:hover .sess-actions,.session-item.active .sess-actions{opacity:1}
+}
 
 /* ── Buttons ── */
 .btn{padding:8px 16px;border-radius:8px;font-size:13.5px;font-weight:500;cursor:pointer;border:none;transition:.2s;font-family:'Outfit',sans-serif;display:inline-flex;align-items:center;gap:6px;min-height:34px}
@@ -397,6 +403,9 @@ select.input{cursor:pointer;appearance:none}
   #sidebar-overlay.visible{display:block}
   #hamburger{display:flex !important;width:40px;height:40px;align-items:center;justify-content:center}
   .main{width:100%;min-width:0}
+  .session-item{padding:12px 10px;border-radius:10px}
+  .sess-actions{opacity:1;gap:6px}
+  .sess-action-btn,.sess-actions > span{width:34px!important;height:34px!important;border-radius:10px!important;font-size:17px!important}
   .msg-user{max-width:92%;font-size:14px}
   .msg-ai{font-size:14px}
   #chat-input{font-size:16px}
@@ -648,6 +657,12 @@ body.light .tool-card.active .tool-state{color:#047857!important}
 body.light .files-top-btn{background:var(--s)!important;border-color:var(--b)!important;color:var(--text)!important}
 body.light .files-top-btn:hover,
 body.light .files-top-btn.active{background:#eef1ff!important;border-color:var(--accent)!important;color:var(--accent)!important}
+body.light .sess-action-btn,
+body.light .sess-actions > span{background:#f4f2ff!important;border-color:#dad6ff!important;color:#6657e8!important}
+body.light .sess-action-btn:hover,
+body.light .sess-actions > span:hover,
+body.light .session-item.active .sess-action-btn,
+body.light .session-item.active .sess-actions > span{background:#e8e4ff!important;border-color:#7c6ff7!important;color:#4338ca!important}
 body.light .files-side-panel{background:rgba(255,255,255,.96)!important;border-color:var(--b)!important;color:var(--text)!important;box-shadow:0 24px 70px rgba(16,24,40,.18)}
 body.light .files-panel-head,
 body.light .file-row{border-color:var(--b)!important}
