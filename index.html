@@ -164,6 +164,8 @@ body:not(.light) #hljs-theme-light{display:none}
 .composer-send-stack{display:flex;align-items:stretch;gap:6px;width:min(300px,42vw);min-width:190px;flex-shrink:0}
 .composer-send-stack .send-primary{flex:1 1 80%;min-width:0}
 #stop-chat-btn{flex:0 0 20%;min-width:48px;padding:7px 10px;justify-content:center}
+.composer-send-stack.is-generating{display:flex!important;flex-direction:row!important}
+.composer-send-stack.is-generating .send-btn{width:auto!important}
 .composer-send-stack.is-generating #stop-chat-btn{display:inline-flex!important}
 .composer-send-stack:not(.is-generating) #stop-chat-btn{display:none!important}
 .composer-send-stack.is-generating .send-primary{flex:1 1 80%!important}
@@ -431,6 +433,7 @@ select.input{cursor:pointer;appearance:none}
   .context-chip .ctx-label{display:none}
   #conn-quick-bar{max-width:100%;overflow-x:auto;padding-bottom:2px}
   .composer-send-stack{width:100%;min-width:0}
+  .composer-send-stack.is-generating{display:flex!important;flex-direction:row!important}
   .composer-send-stack.is-generating #stop-chat-btn{width:auto!important;flex:0 0 20%!important;min-width:56px}
   .composer-send-stack.is-generating .send-primary{width:auto!important;flex:1 1 80%!important}
   .send-btn{width:100%;justify-content:center !important;min-height:42px}
@@ -1124,7 +1127,7 @@ const S = {
   recording: false, mediaRec: null, audioChunks: [], voiceMode: false,
   liveVoiceRoom: null, liveVoiceTrack: null, liveVoiceSession: null, liveVoiceConnected: false,
   usage: null, pendingImage: null, pendingAttachments: [], pendingPastes: [], pasteViewMap: {}, fileLibrary: [], filesPanelOpen: false,
-  chatQueue: [], queueRunning: false, activeChatAbort: null, activeEventSource: null, activeChatStop: null, stopRequested: false,
+  chatQueue: [], queueRunning: false, activeChatAbort: null, activeEventSource: null, activeChatStop: null, stopRequested: false, generationActive: false,
   chatSearchOpen: false, chatSearchQuery: '', chatSearchResults: [], chatSearchTimer: null, chatSearchLoading: false,
   lastTokens: { input:0, output:0, total:0 },
   contextStatus: null,
@@ -3008,26 +3011,37 @@ function renderQueuePanel() {
   if (btn) btn.textContent = S.streaming ? 'Queue ↗' : 'Send ↗';
   const stopBtn = document.getElementById('stop-chat-btn');
   if (stopBtn) stopBtn.style.display = S.streaming ? 'inline-flex' : 'none';
+  updateComposerGenerationState();
+}
+function isChatGenerating() {
+  return !!(S.generationActive || S.streaming || S.activeEventSource || S.activeChatAbort || typeof S.activeChatStop === 'function');
 }
 function updateComposerGenerationState() {
+  const generating = isChatGenerating();
   const btn = document.getElementById('send-btn-label');
-  if (btn) btn.textContent = (S.streaming ? 'Queue ' : 'Send ') + String.fromCharCode(8599);
+  if (btn) btn.textContent = (generating ? 'Queue ' : 'Send ') + String.fromCharCode(8599);
   const stopBtn = document.getElementById('stop-chat-btn');
   if (stopBtn) {
-    stopBtn.style.display = S.streaming ? 'inline-flex' : 'none';
-    stopBtn.setAttribute('aria-hidden', S.streaming ? 'false' : 'true');
+    stopBtn.style.display = generating ? 'inline-flex' : 'none';
+    stopBtn.setAttribute('aria-hidden', generating ? 'false' : 'true');
   }
   const stack = stopBtn?.closest?.('.composer-send-stack');
-  if (stack) stack.classList.toggle('is-generating', !!S.streaming);
+  if (stack) stack.classList.toggle('is-generating', generating);
 }
 function removeQueueItem(id) { S.chatQueue = S.chatQueue.filter(x => x.id !== id); renderQueuePanel(); }
 
 function stopChatGeneration() {
-  if (!S.streaming && !S.activeEventSource && !S.activeChatAbort && typeof S.activeChatStop !== 'function') return;
+  if (!isChatGenerating()) return;
   S.stopRequested = true;
   try { S.activeEventSource?.close?.(); } catch(e) {}
   try { S.activeChatAbort?.abort?.(); } catch(e) {}
   if (typeof S.activeChatStop === 'function') S.activeChatStop();
+  else {
+    S.streaming = false;
+    S.generationActive = false;
+    updateComposerGenerationState();
+    renderQueuePanel();
+  }
 }
 
 function getSlashCommandFromMessage(text) {
@@ -3068,18 +3082,20 @@ function submitChat() {
 }
 function _executeChat(msg, attachments = []) {
   S.streaming = true;
+  S.generationActive = true;
   S.stopRequested = false;
+  updateComposerGenerationState();
   renderQueuePanel();
   _sendChatInternal(msg, attachments);
 }
 function _tryRunNextQueued() {
-  if (!S.chatQueue.length) { S.streaming = false; renderQueuePanel(); return; }
+  if (!S.chatQueue.length) { S.streaming = false; S.generationActive = false; updateComposerGenerationState(); renderQueuePanel(); return; }
   const next = S.chatQueue.shift(); renderQueuePanel(); _executeChat(next.msg, next.attachments || []);
 }
 
 async function _sendChatInternal(msg, attachments = []) {
   const msgsEl = document.getElementById('messages');
-  if (!msgsEl) { S.streaming = false; _tryRunNextQueued(); return; }
+  if (!msgsEl) { S.streaming = false; S.generationActive = false; updateComposerGenerationState(); _tryRunNextQueued(); return; }
   const empty = msgsEl.querySelector('div[style*="align-items:center"]');
   if (empty) msgsEl.innerHTML = '';
 
@@ -3128,6 +3144,8 @@ async function _sendChatInternal(msg, attachments = []) {
     try { S.activeChatAbort?.abort?.(); } catch(e) {}
     _clearActiveStreamRefs();
     S.streaming = false;
+    S.generationActive = false;
+    updateComposerGenerationState();
     document.getElementById('typing-ind').style.display = 'none';
     const bubble = document.querySelector(`#${aiId} .msg-ai`);
     if (bubble) {
@@ -3149,6 +3167,8 @@ async function _sendChatInternal(msg, attachments = []) {
     requestCompleted = true;
     _clearActiveStreamRefs();
     S.streaming = false;
+    S.generationActive = false;
+    updateComposerGenerationState();
     document.getElementById('typing-ind').style.display = 'none';
     if (d?.model_id) {
       activeModelId = d.model_id;
@@ -3246,6 +3266,8 @@ async function _sendChatInternal(msg, attachments = []) {
     requestCompleted = true;
     _clearActiveStreamRefs();
     S.streaming = false;
+    S.generationActive = false;
+    updateComposerGenerationState();
     document.getElementById('typing-ind').style.display = 'none';
     const err = errText(errMsg);
     setModelHealth(activeModelId, 'bad', err || 'stream error');
