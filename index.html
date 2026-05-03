@@ -207,7 +207,11 @@ select.input{cursor:pointer;appearance:none}
 .model-status-dot{width:8px;height:8px;border-radius:50%;background:#34d399;box-shadow:0 0 8px rgba(52,211,153,.55);flex-shrink:0}
 .model-status-dot.bad{background:#f87171;box-shadow:0 0 8px rgba(248,113,113,.55)}
 .model-status-dot.checking{background:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.42)}
-.model-intel-badge{font-family:'DM Mono',monospace;font-size:10px;font-weight:800;letter-spacing:.02em;border-radius:999px;padding:3px 7px;border:1px solid var(--intel-border);color:var(--intel-color);background:var(--intel-bg);box-shadow:0 0 14px var(--intel-glow);white-space:nowrap;flex-shrink:0}
+.model-sort-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px 4px;border-bottom:1px solid #1a1a30;margin-bottom:4px}
+.model-sort-title{font-size:10px;color:#4a4a6a;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.model-sort-btn{border:1px solid #252540;background:#111124;color:#a8a8d8;border-radius:8px;width:28px;height:24px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;line-height:1;transition:.15s}
+.model-sort-btn:hover{border-color:#7c6ff7;color:#fff;background:#171735}
+.model-intel-badge{font-family:'DM Mono',monospace;font-size:10px;font-weight:800;letter-spacing:.02em;border-radius:999px;padding:3px 7px;border:1px solid var(--intel-border);color:var(--intel-color);background:var(--intel-bg);box-shadow:0 0 14px var(--intel-glow);white-space:nowrap;flex-shrink:0;max-width:136px;overflow:hidden;text-overflow:ellipsis}
 .model-intel-apex{--intel-color:#f5d0fe;--intel-border:rgba(217,70,239,.55);--intel-bg:rgba(88,28,135,.36);--intel-glow:rgba(217,70,239,.28)}
 .model-intel-elite{--intel-color:#bae6fd;--intel-border:rgba(56,189,248,.5);--intel-bg:rgba(8,47,73,.42);--intel-glow:rgba(56,189,248,.24)}
 .model-intel-strong{--intel-color:#bbf7d0;--intel-border:rgba(52,211,153,.48);--intel-bg:rgba(6,78,59,.36);--intel-glow:rgba(52,211,153,.22)}
@@ -554,10 +558,12 @@ body.light .tool-event,
 body.light .thinking-block{background:var(--s2)!important;border-color:var(--b)!important;color:var(--text)}
 body.light .btn-ghost,
 body.light .voice-btn,
-body.light .page-back-btn{background:var(--s)!important;border-color:var(--b)!important;color:var(--muted)!important}
+body.light .page-back-btn,
+body.light .model-sort-btn{background:var(--s)!important;border-color:var(--b)!important;color:var(--muted)!important}
 body.light .btn-ghost:hover,
 body.light .voice-btn:hover,
-body.light .page-back-btn:hover{background:#eef1ff!important;border-color:var(--accent)!important;color:var(--accent)!important}
+body.light .page-back-btn:hover,
+body.light .model-sort-btn:hover{background:#eef1ff!important;border-color:var(--accent)!important;color:var(--accent)!important}
 body.light .attach-card,
 body.light .tool-card{background:linear-gradient(135deg,#fff,#f6f8ff)!important;border-color:var(--b)!important;color:var(--text)!important;box-shadow:0 1px 2px rgba(16,24,40,.04)}
 body.light .attach-card:hover,
@@ -1031,6 +1037,7 @@ const S = {
   platformStatus: null,
   serviceHealth: null,
   modelHealth: {}, modelHealthTimer: null, lastFailedChat: null,
+  modelSortDesc: true,
   sidebarFeatures: null,
   enabledSidebarFeatures: null,
   skills: [], selectedSkillIds: [], mcpServers: [], selectedMcpTools: [], selectedConnectorIds: [],
@@ -1046,6 +1053,7 @@ function loadSaved() {
   S.refresh = localStorage.getItem('jazz_refresh');
   try { S.user = JSON.parse(localStorage.getItem('jazz_user') || 'null'); } catch(e) {}
   S.modelId = localStorage.getItem('jazz_model_id') || DEFAULT_MODEL_ID;
+  S.modelSortDesc = localStorage.getItem('jazz_model_sort_desc') !== 'false';
   // Apply persisted theme (button state is refreshed after app chrome renders).
   const savedTheme = localStorage.getItem('jazz_theme');
   const theme = savedTheme === 'light' ? 'light' : 'dark';
@@ -1358,7 +1366,7 @@ function modelIntelligenceMeta(model = {}) {
   else if (ctx >= 32000) score += 2;
   score = Math.max(30, Math.min(99, Math.round(score)));
   const tier = score >= 94 ? 'apex' : score >= 88 ? 'elite' : score >= 78 ? 'strong' : score >= 64 ? 'balanced' : 'light';
-  const label = score >= 94 ? 'Apex' : score >= 88 ? 'Elite' : score >= 78 ? 'Strong' : score >= 64 ? 'Mid' : 'Lite';
+  const label = score >= 94 ? 'Most intelligent' : score >= 88 ? 'Elite' : score >= 78 ? 'Strong' : score >= 64 ? 'Mid' : 'Lite';
   return { score, tier, label };
 }
 function decorateModel(model) {
@@ -1368,8 +1376,9 @@ function decorateModel(model) {
 function compareModelsByIntelligence(a, b) {
   const ai = a.intelligence_score ?? a.intelligence?.score ?? modelIntelligenceMeta(a).score;
   const bi = b.intelligence_score ?? b.intelligence?.score ?? modelIntelligenceMeta(b).score;
-  if (bi !== ai) return bi - ai;
-  if ((b.ctx || 0) !== (a.ctx || 0)) return (b.ctx || 0) - (a.ctx || 0);
+  const desc = S.modelSortDesc !== false;
+  if (bi !== ai) return desc ? bi - ai : ai - bi;
+  if ((b.ctx || 0) !== (a.ctx || 0)) return desc ? (b.ctx || 0) - (a.ctx || 0) : (a.ctx || 0) - (b.ctx || 0);
   if (a.id === DEFAULT_MODEL_ID) return -1;
   if (b.id === DEFAULT_MODEL_ID) return 1;
   return String(a.label || a.id).localeCompare(String(b.label || b.id));
@@ -1795,6 +1804,16 @@ function modelIntelligenceBadgeHtml(model) {
   const intel = model.intelligence || modelIntelligenceMeta(model);
   return `<span class="model-intel-badge model-intel-${intel.tier}" title="Intelligence ${intel.score}/99">${intel.label} ${intel.score}</span>`;
 }
+function sortedModelOptions() {
+  return (S.models || []).slice().sort(compareModelsByIntelligence);
+}
+function toggleModelSort(e) {
+  if (e) e.stopPropagation();
+  S.modelSortDesc = S.modelSortDesc === false;
+  localStorage.setItem('jazz_model_sort_desc', String(S.modelSortDesc));
+  S.models = sortedModelOptions();
+  rerenderModelDropdown();
+}
 function getNextWorkingModel(excludeId = S.modelId) {
   const candidates = (S.models || []).filter(m => m.id !== excludeId);
   return candidates.find(m => modelHealth(m.id).status !== 'bad') || candidates[0] || null;
@@ -1863,9 +1882,15 @@ function toggleModelDropdown(e) {
   setTimeout(() => document.addEventListener('click', _closeDrop), 0);
 }
 function renderModelDropdownHtml() {
+  const desc = S.modelSortDesc !== false;
+  const arrow = desc ? '↑' : '↓';
+  const sortTitle = desc ? 'Descending intelligence' : 'Ascending intelligence';
   return `<div class="model-dropdown" onclick="event.stopPropagation()">
-    <div style="padding:8px 12px 4px;font-size:10px;color:#4a4a6a;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid #1a1a30;margin-bottom:4px" title="Sorted by intelligence, high to low">Models</div>
-    ${S.models.map(m => `
+    <div class="model-sort-head" title="${escAttr(sortTitle)}">
+      <span class="model-sort-title">Models</span>
+      <button class="model-sort-btn" onclick="toggleModelSort(event)" title="${escAttr(sortTitle)}">${arrow}</button>
+    </div>
+    ${sortedModelOptions().map(m => `
       <div class="model-opt${m.id===S.modelId?' selected':''}" onclick="selectModel(${escAttr(JSON.stringify(String(m.id)))})">
         ${modelStatusDotHtml(m.id)}
         <span style="flex:1;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m.label)}</span>
