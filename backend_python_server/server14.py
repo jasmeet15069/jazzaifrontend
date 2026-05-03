@@ -5283,9 +5283,14 @@ class FileGenerateReq(BaseModel):
     content: str = Field(..., min_length=1, max_length=1_000_000)
     file_type: str = Field(
         "txt",
-        pattern="^(txt|text|md|markdown|csv|xlsx|excel|pdf|docx|word|pptx|ppt|powerpoint|slides|presentation|html|json|zip|archive)$",
+        pattern="^(txt|text|md|markdown|csv|xlsx|excel|pdf|tex|latex|docx|word|pptx|ppt|powerpoint|slides|presentation|html|json|zip|archive)$",
     )
     filename: Optional[str] = Field(None, max_length=120)
+
+class LatexCompileReq(BaseModel):
+    source: str = Field(..., min_length=1, max_length=1_000_000)
+    filename: Optional[str] = Field(None, max_length=120)
+    output: str = Field("pdf", pattern="^(pdf|tex|analysis)$")
 
 class AgentRunReq(BaseModel):
     prompt: str = Field(..., min_length=5)
@@ -9011,7 +9016,7 @@ async def health():
             "streaming_sse","multi_model","agent_loop","cron_jobs","branching",
             "vision","rag","hybrid_search","reranking","rolling_summaries",
             "tiered_memory","auto_memory_extract","auto_thinking","website_builder",
-            "code_execution","shell_access","file_ops","voice_stt_tts","livekit_voice",
+            "code_execution","shell_access","file_ops","latex_compile","latex_pdf","voice_stt_tts","livekit_voice",
             "full_oauth_pkce","25_connectors","mcp_servers","livy_spark",
             "slash_commands","api_keys","gdpr","audit_log","impersonation",
             "coupons","notifications","broadcast","multi_model_compare",
@@ -9098,6 +9103,7 @@ _GENERATED_EXT_ALIASES = {
     "csv": "csv",
     "xlsx": "xlsx", "excel": "xlsx",
     "pdf": "pdf",
+    "tex": "tex", "latex": "tex",
     "docx": "docx", "word": "docx",
     "pptx": "pptx", "ppt": "pptx", "powerpoint": "pptx", "slides": "pptx", "presentation": "pptx",
     "html": "html",
@@ -9111,6 +9117,7 @@ _GENERATED_MIME = {
     "csv": "text/csv",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "pdf": "application/pdf",
+    "tex": "application/x-tex",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "html": "text/html",
@@ -9123,7 +9130,7 @@ def _generated_ext(kind: str) -> str:
 
 def _infer_generated_filename(prompt: str, content: str, ext: str) -> str:
     text = f"{prompt}\n{content[:500]}"
-    m = re.search(r"(?:called|named|filename|file name|as)\s+[`\"']?([A-Za-z0-9][A-Za-z0-9._ -]{0,80}?\.(?:pdf|xlsx|csv|txt|md|markdown|docx|pptx|html|json|zip))", text, re.I)
+    m = re.search(r"(?:called|named|filename|file name|as)\s+[`\"']?([A-Za-z0-9][A-Za-z0-9._ -]{0,80}?\.(?:pdf|tex|latex|xlsx|csv|txt|md|markdown|docx|pptx|html|json|zip))", text, re.I)
     if not m:
         m = re.search(
             r"(?:called|named|filename|file name|as)\s+[`\"']?([A-Za-z0-9][A-Za-z0-9._ -]{1,80}?)(?=$|[`\"',.!?:;]|\s+(?:with|for|from|about|containing|using|and)\b)",
@@ -9163,6 +9170,136 @@ def _clean_generated_content(content: str) -> str:
     text = (content or "").strip()
     m = re.fullmatch(r"```(?:[A-Za-z0-9_-]+)?\s*\n([\s\S]*?)\n```\s*", text)
     return m.group(1).strip() if m else text
+
+_LATEX_HINT_RE = re.compile(
+    r"\\(?:documentclass|begin\{document\}|usepackage|section\{|subsection\{|chapter\{|title\{|author\{|begin\{(?:equation|align|tabular|figure|enumerate|itemize))",
+    re.IGNORECASE,
+)
+
+def _extract_latex_source(content: str) -> str:
+    text = _clean_generated_content(content)
+    fenced = re.search(r"```(?:latex|tex)\s*\n([\s\S]*?)\n```", text, re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1).strip()
+    text = text.replace("<\\/JAZZ_PASTED_CONTENT>", "</JAZZ_PASTED_CONTENT>")
+    pasted = re.search(r"<JAZZ_PASTED_CONTENT\b[^>]*>\s*([\s\S]*?)\s*</JAZZ_PASTED_CONTENT>", text, re.IGNORECASE)
+    if pasted and _LATEX_HINT_RE.search(pasted.group(1)):
+        text = pasted.group(1).strip()
+    starts = [i for i in (text.find("\\documentclass"), text.find("\\begin{document}")) if i >= 0]
+    if starts:
+        text = text[min(starts):].strip()
+    return text
+
+def _looks_like_latex(content: str) -> bool:
+    return bool(_LATEX_HINT_RE.search(_extract_latex_source(content)))
+
+def _latex_analysis(source: str) -> Dict[str, Any]:
+    src = source or ""
+    packages = re.findall(r"\\usepackage(?:\[[^\]]*\])?\{([^}]+)\}", src)
+    pkg_list = []
+    for p in packages:
+        pkg_list.extend([x.strip() for x in p.split(",") if x.strip()])
+    sections = re.findall(r"\\(?:chapter|section|subsection|subsubsection)\*?\{([^}]+)\}", src)
+    title = ""
+    m_title = re.search(r"\\title\{([^}]+)\}", src)
+    if m_title:
+        title = re.sub(r"\s+", " ", m_title.group(1)).strip()
+    cls = ""
+    m_cls = re.search(r"\\documentclass(?:\[[^\]]*\])?\{([^}]+)\}", src)
+    if m_cls:
+        cls = m_cls.group(1).strip()
+    equations = len(re.findall(r"\\begin\{(?:equation|align|gather|multline)\}|\$\$|\\\[", src))
+    return {
+        "document_class": cls or "article",
+        "title": title,
+        "packages": sorted(set(pkg_list)),
+        "sections": [re.sub(r"\s+", " ", s).strip() for s in sections[:40]],
+        "equations": equations,
+        "has_document": bool(re.search(r"\\begin\{document\}", src)),
+        "chars": len(src),
+        "lines": len(src.splitlines()),
+    }
+
+def _normalise_latex_document(source: str) -> str:
+    src = _extract_latex_source(source).strip()
+    if not src:
+        src = "Empty LaTeX document."
+    if re.search(r"\\begin\{document\}", src):
+        return src
+    return (
+        "\\documentclass[11pt]{article}\n"
+        "\\usepackage[utf8]{inputenc}\n"
+        "\\usepackage{amsmath,amssymb,geometry,hyperref}\n"
+        "\\geometry{margin=1in}\n"
+        "\\begin{document}\n"
+        f"{src}\n"
+        "\\end{document}\n"
+    )
+
+def _latex_plain_preview(source: str) -> str:
+    src = _normalise_latex_document(source)
+    body = re.sub(r"[\s\S]*?\\begin\{document\}", "", src, count=1)
+    body = re.sub(r"\\end\{document\}[\s\S]*", "", body, count=1)
+    body = re.sub(r"\\(chapter|section|subsection|subsubsection)\*?\{([^}]*)\}", r"\n\2\n", body)
+    body = re.sub(r"\\(title|author|date)\{([^}]*)\}", r"\2", body)
+    body = re.sub(r"\\begin\{[^}]+\}|\\end\{[^}]+\}", "\n", body)
+    body = re.sub(r"\\[a-zA-Z]+\*?(?:\[[^\]]*\])?(?:\{([^{}]*)\})?", lambda m: m.group(1) or "", body)
+    body = body.replace("~", " ").replace("\\%", "%").replace("\\&", "&").replace("\\_", "_")
+    body = re.sub(r"[{}]", "", body)
+    return re.sub(r"\n{3,}", "\n\n", body).strip() or src[:8000]
+
+def _latex_engine() -> Optional[str]:
+    for exe in ("tectonic", "pdflatex", "xelatex"):
+        found = shutil.which(exe)
+        if found:
+            return found
+    return None
+
+def _run_latex_engine(source: str, timeout: int = 35) -> Tuple[Optional[bytes], str, str]:
+    engine = _latex_engine()
+    if not engine:
+        return None, "none", "No LaTeX engine found on this server. Used readable PDF fallback."
+    with tempfile.TemporaryDirectory(prefix="jazz_latex_") as tmp:
+        tmp_path = Path(tmp)
+        tex_path = tmp_path / "main.tex"
+        tex_path.write_text(_normalise_latex_document(source), encoding="utf-8")
+        exe = Path(engine).name.lower()
+        if exe == "tectonic":
+            cmd = [engine, "--keep-logs", "--synctex=0", "--outdir", str(tmp_path), str(tex_path)]
+        else:
+            cmd = [engine, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-no-shell-escape", "main.tex"]
+        env = os.environ.copy()
+        env.update({"openin_any": "p", "openout_any": "p", "TEXMFOUTPUT": str(tmp_path)})
+        try:
+            proc = subprocess.run(cmd, cwd=str(tmp_path), env=env, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return None, exe, f"LaTeX compile timed out after {timeout}s."
+        log = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        pdf = tmp_path / "main.pdf"
+        if proc.returncode == 0 and pdf.exists():
+            return pdf.read_bytes(), exe, log[-6000:]
+        return None, exe, log[-6000:] or f"{exe} exited with code {proc.returncode}"
+
+def _write_latex_pdf(path: Path, title: str, source: str) -> Dict[str, Any]:
+    doc = _normalise_latex_document(source)
+    analysis = _latex_analysis(doc)
+    pdf_bytes, engine, log = _run_latex_engine(doc)
+    if pdf_bytes:
+        path.write_bytes(pdf_bytes)
+        return {"compiled": True, "engine": engine, "compile_log": log, "analysis": analysis}
+    fallback = (
+        f"{title}\n\n"
+        "LaTeX interpreted preview\n"
+        f"Engine: {engine}\n"
+        f"Compile note: {log}\n\n"
+        f"Document class: {analysis.get('document_class')}\n"
+        f"Packages: {', '.join(analysis.get('packages') or []) or 'none'}\n"
+        f"Sections: {', '.join(analysis.get('sections') or []) or 'none'}\n"
+        f"Equations: {analysis.get('equations', 0)}\n\n"
+        f"{_latex_plain_preview(doc)}"
+    )
+    _write_generated_pdf(path, title, fallback[:60000])
+    return {"compiled": False, "engine": engine, "compile_log": log, "analysis": analysis}
 
 def _html_from_generated_text(title: str, content: str) -> str:
     clean = _clean_generated_content(content)
@@ -9415,10 +9552,15 @@ def _build_generated_file(req: FileGenerateReq, user_id: str) -> Dict[str, Any]:
     path = UPLOADS_DIR / stored
     title = Path(original).stem.replace("_", " ").strip() or "JAZZ Generated File"
     clean_content = _clean_generated_content(req.content)
+    extra: Dict[str, Any] = {}
     if ext == "txt":
         path.write_text(clean_content, encoding="utf-8")
     elif ext == "md":
         path.write_text(clean_content, encoding="utf-8")
+    elif ext == "tex":
+        clean_content = _normalise_latex_document(clean_content) if _looks_like_latex(clean_content) else clean_content
+        path.write_text(clean_content, encoding="utf-8")
+        extra = {"analysis": _latex_analysis(clean_content) if _looks_like_latex(clean_content) else {}}
     elif ext == "html":
         path.write_text(_html_from_generated_text(title, clean_content), encoding="utf-8")
     elif ext == "json":
@@ -9436,7 +9578,10 @@ def _build_generated_file(req: FileGenerateReq, user_id: str) -> Dict[str, Any]:
             ws.append(row)
         wb.save(str(path))
     elif ext == "pdf":
-        _write_generated_pdf(path, title, clean_content)
+        if _looks_like_latex(clean_content) or ("latex" in (req.prompt or "").lower()):
+            extra = _write_latex_pdf(path, title, clean_content)
+        else:
+            _write_generated_pdf(path, title, clean_content)
     elif ext == "docx":
         _write_generated_docx(path, title, clean_content)
     elif ext == "pptx":
@@ -9453,7 +9598,43 @@ def _build_generated_file(req: FileGenerateReq, user_id: str) -> Dict[str, Any]:
         "text_chars": len(text_preview or clean_content),
         "generated": True,
         "download_url": f"/files/download/{urllib.parse.quote(stored)}",
+        **extra,
     }
+
+def _build_latex_artifact(req: LatexCompileReq, user_id: str) -> Dict[str, Any]:
+    source = _normalise_latex_document(req.source)
+    analysis = _latex_analysis(source)
+    if req.output == "analysis":
+        return {"ok": True, "analysis": analysis, "text_preview": _latex_plain_preview(source)[:12000]}
+    ext = "tex" if req.output == "tex" else "pdf"
+    mime = _GENERATED_MIME[ext]
+    base_name = req.filename or analysis.get("title") or "jazz-latex"
+    original = _safe_generated_filename(base_name, ext)
+    stored = f"{_new_id()}_{original}"
+    path = UPLOADS_DIR / stored
+    extra: Dict[str, Any] = {"analysis": analysis}
+    if ext == "tex":
+        path.write_text(source, encoding="utf-8")
+    else:
+        extra.update(_write_latex_pdf(path, Path(original).stem.replace("_", " "), source))
+    text_preview, _ = _extract_text_sync(path, mime)
+    return {
+        "filename": stored,
+        "original": original,
+        "size": path.stat().st_size,
+        "type": mime,
+        "text_preview": (text_preview or _latex_plain_preview(source))[:12000],
+        "text_chars": len(text_preview or source),
+        "generated": True,
+        "download_url": f"/files/download/{urllib.parse.quote(stored)}",
+        **extra,
+    }
+
+@app.post("/latex/compile")
+async def compile_latex(req: LatexCompileReq, user: Dict = Depends(_get_current_user)):
+    uid = user.get("id") or user.get("sub", "")
+    result = await asyncio.get_running_loop().run_in_executor(_executor, _build_latex_artifact, req, uid)
+    return result
 
 @app.post("/files/generate")
 async def generate_file(req: FileGenerateReq, user: Dict = Depends(_get_current_user)):

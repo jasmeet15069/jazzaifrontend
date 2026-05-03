@@ -1060,7 +1060,7 @@ const S = {
   recording: false, mediaRec: null, audioChunks: [], voiceMode: false,
   liveVoiceRoom: null, liveVoiceTrack: null, liveVoiceSession: null, liveVoiceConnected: false,
   usage: null, pendingImage: null, pendingAttachments: [], pendingPastes: [], pasteViewMap: {}, fileLibrary: [], filesPanelOpen: false,
-  chatQueue: [], queueRunning: false,
+  chatQueue: [], queueRunning: false, activeChatAbort: null, activeEventSource: null, activeChatStop: null, stopRequested: false,
   chatSearchOpen: false, chatSearchQuery: '', chatSearchResults: [], chatSearchTimer: null, chatSearchLoading: false,
   lastTokens: { input:0, output:0, total:0 },
   contextStatus: null,
@@ -1743,6 +1743,9 @@ async function chat({ sessionId } = {}) {
               <span style="font-size:9px;color:#4a4a6a;margin-left:2px">▾</span>
             </div>
           </div>
+          <button class="btn btn-danger send-btn" id="stop-chat-btn" style="display:none;padding:7px 14px;font-size:13px;justify-content:center;border-radius:10px;flex-shrink:0" onclick="stopChatGeneration()" title="Stop generating">
+            Stop
+          </button>
           <button class="btn btn-primary send-btn" style="padding:7px 18px;font-size:13px;justify-content:center;border-radius:10px;flex-shrink:0" onclick="submitChat()">
             <span id="send-btn-label">Send ↗</span>
           </button>
@@ -2936,8 +2939,18 @@ function renderQueuePanel() {
     </div>`).join('');
   const btn = document.getElementById('send-btn-label');
   if (btn) btn.textContent = S.streaming ? 'Queue ↗' : 'Send ↗';
+  const stopBtn = document.getElementById('stop-chat-btn');
+  if (stopBtn) stopBtn.style.display = S.streaming ? 'inline-flex' : 'none';
 }
 function removeQueueItem(id) { S.chatQueue = S.chatQueue.filter(x => x.id !== id); renderQueuePanel(); }
+
+function stopChatGeneration() {
+  if (!S.streaming) return;
+  S.stopRequested = true;
+  try { S.activeEventSource?.close?.(); } catch(e) {}
+  try { S.activeChatAbort?.abort?.(); } catch(e) {}
+  if (typeof S.activeChatStop === 'function') S.activeChatStop();
+}
 
 function getSlashCommandFromMessage(text) {
   const m = stripPastedContentForCommands(text).match(/(^|[\s([{])\/([a-z0-9_-]+)(?=\s|$)/i);
@@ -2975,7 +2988,12 @@ function submitChat() {
   }
   _executeChat(msg, attachments);
 }
-function _executeChat(msg, attachments = []) { S.streaming = true; renderQueuePanel(); _sendChatInternal(msg, attachments); }
+function _executeChat(msg, attachments = []) {
+  S.streaming = true;
+  S.stopRequested = false;
+  renderQueuePanel();
+  _sendChatInternal(msg, attachments);
+}
 function _tryRunNextQueued() {
   if (!S.chatQueue.length) { S.streaming = false; renderQueuePanel(); return; }
   const next = S.chatQueue.shift(); renderQueuePanel(); _executeChat(next.msg, next.attachments || []);
@@ -3003,8 +3021,9 @@ async function _sendChatInternal(msg, attachments = []) {
 
   let apiMsg = msg;
   let imgData = null;
+  let preparedAttachments = [];
   if (localAttachments.length) {
-    const preparedAttachments = await prepareAttachmentsForSend(localAttachments);
+    preparedAttachments = await prepareAttachmentsForSend(localAttachments);
     addFilesToLibrary(preparedAttachments);
     const attachmentContext = buildAttachmentContext(preparedAttachments);
     if (attachmentContext) apiMsg = `${msg}\n\n${attachmentContext}`;
@@ -3018,8 +3037,39 @@ async function _sendChatInternal(msg, attachments = []) {
   let suppressLiveAssistant = isToolSlashMessage(msg);
   let generatedFileQueued = false;
 
-  function _onDone(d) {
+  function _clearActiveStreamRefs() {
+    S.activeChatAbort = null;
+    S.activeEventSource = null;
+    S.activeChatStop = null;
+    S.stopRequested = false;
+  }
+  function _onStopped() {
+    if (requestCompleted) return;
     requestCompleted = true;
+    try { S.activeEventSource?.close?.(); } catch(e) {}
+    try { S.activeChatAbort?.abort?.(); } catch(e) {}
+    _clearActiveStreamRefs();
+    S.streaming = false;
+    document.getElementById('typing-ind').style.display = 'none';
+    const bubble = document.querySelector(`#${aiId} .msg-ai`);
+    if (bubble) {
+      bubble.style.display = '';
+      bubble.classList.remove('cursor-blink');
+      bubble.innerHTML = full.trim() ? renderAssistantContent(full) : '<span style="color:#fbbf24">Generation stopped.</span>';
+    }
+    document.querySelector(`#${aiId}`)?.insertAdjacentHTML('beforeend', `
+      <div style="display:flex;gap:5px;align-items:center;padding:0 2px;margin-top:4px">
+        <span class="badge badge-warn" style="font-size:9px">stopped</span>
+        ${full.trim() ? `<button onclick="copyMsg(this)" data-text="${escAttr(full)}" class="btn btn-ghost btn-xs">copy</button>` : ''}
+      </div>`);
+    addCopyBtns(); scrollBottom(); renderQueuePanel();
+  }
+  S.activeChatStop = _onStopped;
+
+  function _onDone(d) {
+    if (requestCompleted) return;
+    requestCompleted = true;
+    _clearActiveStreamRefs();
     S.streaming = false;
     document.getElementById('typing-ind').style.display = 'none';
     if (d?.model_id) {
@@ -3063,7 +3113,7 @@ async function _sendChatInternal(msg, attachments = []) {
     if (!d.context) setTimeout(loadContextStatus, 300);
     if (!generatedFileQueued) {
       generatedFileQueued = true;
-      maybeGenerateFileFromResponse(msg, displayText || full);
+      maybeGenerateFileFromResponse(apiMsg, displayText || full);
     }
     loadSessions(); loadUsage(); renderQueuePanel(); _tryRunNextQueued();
   }
@@ -3109,7 +3159,10 @@ async function _sendChatInternal(msg, attachments = []) {
     scrollBottom();
   }
   function _onError(errMsg) {
+    if (requestCompleted) return;
+    if (S.stopRequested) { _onStopped(); return; }
     requestCompleted = true;
+    _clearActiveStreamRefs();
     S.streaming = false;
     document.getElementById('typing-ind').style.display = 'none';
     const err = errText(errMsg);
@@ -3130,8 +3183,10 @@ async function _sendChatInternal(msg, attachments = []) {
       if (S.activeSession) params.append('session_id', S.activeSession);
       if (imgData) params.append('image_url', imgData);
       const es = new EventSource(`${API}/chat/stream?${params}`);
+      S.activeEventSource = es;
+      S.activeChatAbort = null;
       let started = false;
-      const timeout = setTimeout(() => { if (!started) { es.close(); resolve(false); } }, 6000);
+      const timeout = setTimeout(() => { if (!started) { es.close(); resolve(S.stopRequested || requestCompleted); } }, 6000);
       es.onmessage = e => {
         let d; try { d = JSON.parse(e.data); } catch { return; }
         if (d.type === 'start') { clearTimeout(timeout); started = true; if (d.model_id) { activeModelId = d.model_id; setModelHealth(d.model_id, 'checking', 'stream started'); updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; loadContextStatus(); } resolve(true); }
@@ -3141,19 +3196,23 @@ async function _sendChatInternal(msg, attachments = []) {
         if (d.type === 'done') { es.close(); _onDone(d); }
         if (d.type === 'error') { es.close(); _onError(d.message); }
       };
-      es.onerror = () => { clearTimeout(timeout); es.close(); if (!started) resolve(false); else _onError('Connection lost'); };
+      es.onerror = () => { clearTimeout(timeout); es.close(); if (S.stopRequested || requestCompleted) resolve(true); else if (!started) resolve(false); else _onError('Connection lost'); };
     });
   }
 
   async function _tryPostStream() {
     try {
       const body = { message: apiMsg, model_id: requestedModelId, use_rag: S.useRag, web_search: S.useWeb, plan_mode: S.planMode, agent_mode: S.agentMode, tools: selectedToolOptions(), skill_ids: S.selectedSkillIds||[], session_id: S.activeSession||undefined, image_url: imgData||undefined };
-      const resp = await apiFetch(`${API}/chat/stream`, { method:'POST', headers:{ 'Authorization':'Bearer '+S.token, 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+      const controller = new AbortController();
+      S.activeChatAbort = controller;
+      S.activeEventSource = null;
+      const resp = await apiFetch(`${API}/chat/stream`, { method:'POST', headers:{ 'Authorization':'Bearer '+S.token, 'Content-Type':'application/json' }, body: JSON.stringify(body), signal: controller.signal });
       if (!resp.ok) { const e = await resp.json().catch(() => ({ detail: resp.statusText })); _onError(errText(e.detail || e.message || e || 'POST failed')); return; }
       const reader = resp.body.getReader(), dec = new TextDecoder();
       let buf = '';
       while (true) {
         const { value, done } = await reader.read(); if (done) break;
+        if (requestCompleted) return;
         buf += dec.decode(value, { stream:true });
         const lines = buf.split('\n'); buf = lines.pop();
         for (const line of lines) {
@@ -3168,13 +3227,16 @@ async function _sendChatInternal(msg, attachments = []) {
         }
       }
       if (!requestCompleted) _onError('Stream ended without a response');
-    } catch(err) { _onError(err.message); }
+    } catch(err) {
+      if (S.stopRequested || err?.name === 'AbortError') _onStopped();
+      else _onError(err.message);
+    }
   }
 
   try {
     const preferPost = apiMsg.length > 1800 || !!imgData || localAttachments.length || S.agentMode;
     const esWorked = preferPost ? false : await _tryEventSource();
-    if (!esWorked) await _tryPostStream();
+    if (!esWorked && !requestCompleted && !S.stopRequested) await _tryPostStream();
   } catch(err) { _onError(err.message); }
 }
 
@@ -3303,9 +3365,11 @@ function detectGeneratedFileRequest(text = '') {
   const raw = String(text || '').trim();
   const s = raw.toLowerCase();
   if (!/\b(generate|create|make|export|download|save|build|prepare)\b/.test(s)) return null;
-  if (!/\b(file|pdf|excel|xlsx|spreadsheet|workbook|csv|text|txt|markdown|md|word|docx|doc|powerpoint|pptx|ppt|slides|presentation|html|webpage|json|zip|archive|document|report)\b/.test(s)) return null;
+  if (!/\b(file|pdf|latex|tex|overleaf|compile|compiler|convert|excel|xlsx|spreadsheet|workbook|csv|text|txt|markdown|md|word|docx|doc|powerpoint|pptx|ppt|slides|presentation|html|webpage|json|zip|archive|document|report)\b/.test(s)) return null;
   let fileType = '';
-  if (/\b(powerpoint|pptx|ppt|slides|presentation|deck)\b/.test(s)) fileType = 'pptx';
+  if (/\b(latex|tex|overleaf)\b/.test(s) && /\b(pdf|compile|compiler|convert|render)\b/.test(s)) fileType = 'pdf';
+  else if (/\b(latex|tex|overleaf)\b/.test(s)) fileType = 'tex';
+  else if (/\b(powerpoint|pptx|ppt|slides|presentation|deck)\b/.test(s)) fileType = 'pptx';
   else if (/\b(word|docx|doc)\b/.test(s)) fileType = 'docx';
   else if (/\b(excel|xlsx|spreadsheet|workbook)\b/.test(s)) fileType = 'xlsx';
   else if (/\bcsv\b/.test(s)) fileType = 'csv';
@@ -3316,15 +3380,42 @@ function detectGeneratedFileRequest(text = '') {
   else if (/\b(pdf|report|document)\b/.test(s)) fileType = 'pdf';
   else if (/\b(text|txt)\b/.test(s)) fileType = 'txt';
   else fileType = 'txt';
-  const nameMatch = raw.match(/(?:called|named|filename|file name|as)\s+["'`]?([A-Za-z0-9][A-Za-z0-9._ -]{0,80}?\.(?:pdf|xlsx|csv|txt|md|markdown|docx|pptx|html|json|zip))/i)
+  const nameMatch = raw.match(/(?:called|named|filename|file name|as)\s+["'`]?([A-Za-z0-9][A-Za-z0-9._ -]{0,80}?\.(?:pdf|tex|latex|xlsx|csv|txt|md|markdown|docx|pptx|html|json|zip))/i)
     || raw.match(/(?:called|named|filename|file name|as)\s+["'`]?([A-Za-z0-9][A-Za-z0-9._ -]{1,80}?)(?=$|["'`,.!?:;]|\s+(?:with|for|from|about|containing|using|and)\b)/i);
   return { file_type: fileType, filename: nameMatch?.[1]?.trim() || '' };
+}
+function extractLatexSourceFromText(text = '') {
+  let raw = String(text || '').trim();
+  const fenced = raw.match(/```(?:latex|tex)\s*\n([\s\S]*?)\n```/i);
+  if (fenced) raw = fenced[1].trim();
+  const pasted = raw.match(/<JAZZ_PASTED_CONTENT\b[^>]*>\s*([\s\S]*?)\s*<\/JAZZ_PASTED_CONTENT>/i);
+  if (pasted && /\\(?:documentclass|begin\{document\}|usepackage|section\{|title\{)/i.test(pasted[1])) raw = pasted[1].trim();
+  const starts = ['\\documentclass', '\\begin{document}'].map(k => raw.indexOf(k)).filter(i => i >= 0);
+  if (starts.length) raw = raw.slice(Math.min(...starts)).trim();
+  return raw;
+}
+function looksLikeLatexText(text = '') {
+  return /\\(?:documentclass|begin\{document\}|usepackage|section\{|subsection\{|title\{|begin\{(?:equation|align|tabular|figure|itemize|enumerate))/.test(extractLatexSourceFromText(text));
 }
 async function maybeGenerateFileFromResponse(userPrompt, assistantText) {
   const intent = detectGeneratedFileRequest(userPrompt);
   const content = String(assistantText || '').trim();
-  if (!intent || !content || content.startsWith('[')) return;
+  if (!intent || (!content && !userPrompt) || content.startsWith('[')) return;
   try {
+    const latexSource = looksLikeLatexText(userPrompt) ? extractLatexSourceFromText(userPrompt)
+      : looksLikeLatexText(content) ? extractLatexSourceFromText(content) : '';
+    if (latexSource && (intent.file_type === 'pdf' || intent.file_type === 'tex')) {
+      const result = await post('/latex/compile', {
+        source: latexSource,
+        output: intent.file_type === 'tex' ? 'tex' : 'pdf',
+        filename: intent.filename || undefined
+      });
+      addFilesToLibrary([{ ...result, generated:true }]);
+      toast(result.compiled === false ? 'LaTeX interpreted PDF ready' : `LaTeX ${intent.file_type === 'tex' ? 'source' : 'PDF'} ready`, result.compiled === false ? 'warn' : 'ok');
+      if (!S.filesPanelOpen) openFilesPanel();
+      return;
+    }
+    if (!content) return;
     const result = await post('/files/generate', {
       prompt: userPrompt,
       content,
@@ -3350,6 +3441,9 @@ function addFilesToLibrary(files = []) {
         size: att.size || 0,
         stored,
         generated: !!att.generated,
+        compiled: typeof att.compiled === 'boolean' ? att.compiled : null,
+        engine: att.engine || '',
+        analysis: att.analysis || null,
         downloadUrl: att.download_url || att.downloadUrl || (stored ? `/files/download/${encodeURIComponent(stored)}` : ''),
         preview: String(att.text_preview || att.preview || '').slice(0, 2400),
         transcript: '',
@@ -3384,8 +3478,9 @@ function addFilesToLibrary(files = []) {
 function fileRowHtml(file, pending = false) {
   const image = file.previewUrl || file.imageData || '';
   const thumb = image ? `<img src="${escAttr(image)}" alt="">` : `<span class="file-ext">${escHtml(attachmentExt(file.name, file.type))}</span>`;
-  const status = pending ? 'pending' : file.generated ? 'generated' : file.stored ? 'uploaded' : '';
-  const sub = `${fmtFileSize(file.size)} / ${file.type || 'file'}${status ? ' / ' + status : ''}`;
+  const status = pending ? 'pending' : file.compiled === true ? 'compiled' : file.compiled === false ? 'interpreted PDF' : file.generated ? 'generated' : file.stored ? 'uploaded' : '';
+  const engine = file.engine && file.engine !== 'none' ? ` / ${file.engine}` : '';
+  const sub = `${fmtFileSize(file.size)} / ${file.type || 'file'}${status ? ' / ' + status : ''}${engine}`;
   return `<div class="file-row ${pending?'pending':''}">
     <div class="file-tilt">${thumb}</div>
     <div style="min-width:0">
