@@ -4762,10 +4762,17 @@ async def _ensure_user_model(user_id: str, model_id: str) -> str:
     allowed = await _allowed_model_ids_for_user(user_id)
     return allowed[0] if allowed else "llama-3.3-70b-versatile"
 
+_PASTED_CONTENT_BLOCK_RE = re.compile(
+    r"<JAZZ_PASTED_CONTENT\b[^>]*>.*?</JAZZ_PASTED_CONTENT>",
+    re.IGNORECASE | re.DOTALL,
+)
 _SLASH_RE = re.compile(r"(?<![\w:/.-])/([a-zA-Z0-9_-]+)\b\s*(.*)?$", re.DOTALL)
 
+def _strip_pasted_content_for_tools(message: str) -> str:
+    return _PASTED_CONTENT_BLOCK_RE.sub(" ", message or "").strip()
+
 def _parse_slash(message: str) -> Optional[Tuple[str, str]]:
-    m = _SLASH_RE.match(message.strip())
+    m = _SLASH_RE.match(_strip_pasted_content_for_tools(message))
     if m: return m.group(1).lower(), (m.group(2) or "").strip()
     return None
 
@@ -4775,7 +4782,7 @@ _TOOL_INTENT_RE = re.compile(
 
 async def _infer_slash_command(message: str) -> Optional[Tuple[str, str]]:
     """Let natural language such as 'read gmail inbox' use the same connector path."""
-    text = (message or "").strip()
+    text = _strip_pasted_content_for_tools(message)
     if not text or not _TOOL_INTENT_RE.search(text):
         return None
     low = text.lower()
