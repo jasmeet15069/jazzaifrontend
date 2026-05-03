@@ -207,6 +207,12 @@ select.input{cursor:pointer;appearance:none}
 .model-status-dot{width:8px;height:8px;border-radius:50%;background:#34d399;box-shadow:0 0 8px rgba(52,211,153,.55);flex-shrink:0}
 .model-status-dot.bad{background:#f87171;box-shadow:0 0 8px rgba(248,113,113,.55)}
 .model-status-dot.checking{background:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.42)}
+.model-intel-badge{font-family:'DM Mono',monospace;font-size:10px;font-weight:800;letter-spacing:.02em;border-radius:999px;padding:3px 7px;border:1px solid var(--intel-border);color:var(--intel-color);background:var(--intel-bg);box-shadow:0 0 14px var(--intel-glow);white-space:nowrap;flex-shrink:0}
+.model-intel-apex{--intel-color:#f5d0fe;--intel-border:rgba(217,70,239,.55);--intel-bg:rgba(88,28,135,.36);--intel-glow:rgba(217,70,239,.28)}
+.model-intel-elite{--intel-color:#bae6fd;--intel-border:rgba(56,189,248,.5);--intel-bg:rgba(8,47,73,.42);--intel-glow:rgba(56,189,248,.24)}
+.model-intel-strong{--intel-color:#bbf7d0;--intel-border:rgba(52,211,153,.48);--intel-bg:rgba(6,78,59,.36);--intel-glow:rgba(52,211,153,.22)}
+.model-intel-balanced{--intel-color:#fde68a;--intel-border:rgba(251,191,36,.5);--intel-bg:rgba(113,63,18,.3);--intel-glow:rgba(251,191,36,.2)}
+.model-intel-light{--intel-color:#c4b5fd;--intel-border:rgba(124,111,247,.38);--intel-bg:rgba(49,46,129,.24);--intel-glow:rgba(124,111,247,.16)}
 .model-retry-bar{display:none;align-items:center;justify-content:space-between;gap:10px;border:1px solid rgba(251,191,36,.35);border-radius:10px;background:rgba(67,20,7,.36);padding:8px 10px;color:#fbbf24;font-size:12px}
 .model-retry-bar span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .model-retry-bar button{border-radius:8px;padding:5px 9px;font-size:11px;flex-shrink:0}
@@ -1322,6 +1328,52 @@ function applySidebarFeatureAccess() {
     el.style.display = sidebarFeatureEnabled(el.dataset.featureKey) ? '' : 'none';
   });
 }
+function modelIntelligenceMeta(model = {}) {
+  const hay = `${model.id || ''} ${model.label || model.name || ''} ${(model.tags || []).join(' ')}`.toLowerCase();
+  const ctx = Number(model.ctx || model.context_length || 0);
+  let score = 42;
+  const params = [...hay.matchAll(/(\d+(?:\.\d+)?)\s*b\b/g)].map(m => Number(m[1])).filter(Boolean);
+  const maxB = params.length ? Math.max(...params) : 0;
+  if (maxB >= 200) score += 34;
+  else if (maxB >= 100) score += 30;
+  else if (maxB >= 70) score += 25;
+  else if (maxB >= 30) score += 20;
+  else if (maxB >= 20) score += 16;
+  else if (maxB >= 8) score += 9;
+  else if (maxB >= 3) score += 4;
+  if (hay.includes('qwen3-235b') || hay.includes('qwen3 235b')) score += 18;
+  else if (hay.includes('qwen3')) score += 12;
+  if (hay.includes('glm-4.6') || hay.includes('glm 4.6')) score += 17;
+  else if (hay.includes('glm-4.5') || hay.includes('glm 4.5')) score += 15;
+  if (hay.includes('gemma-4') || hay.includes('gemma 4')) score += 14;
+  if (hay.includes('llama-3.3') || hay.includes('llama 3.3')) score += 13;
+  else if (hay.includes('llama-3.1') || hay.includes('llama 3.1')) score += 8;
+  if (hay.includes('mistral') || hay.includes('mixtral')) score += 8;
+  if (hay.includes('dolphin')) score += 7;
+  if (hay.includes('deepseek-r1') || hay.includes('deepseek r1')) score += 13;
+  if (hay.includes('deepseek-v3') || hay.includes('deepseek v3')) score += 14;
+  if (hay.includes('vision') || hay.includes('vl') || hay.includes('image')) score += 3;
+  if (ctx >= 128000) score += 5;
+  else if (ctx >= 64000) score += 3;
+  else if (ctx >= 32000) score += 2;
+  score = Math.max(30, Math.min(99, Math.round(score)));
+  const tier = score >= 94 ? 'apex' : score >= 88 ? 'elite' : score >= 78 ? 'strong' : score >= 64 ? 'balanced' : 'light';
+  const label = score >= 94 ? 'Apex' : score >= 88 ? 'Elite' : score >= 78 ? 'Strong' : score >= 64 ? 'Mid' : 'Lite';
+  return { score, tier, label };
+}
+function decorateModel(model) {
+  const intelligence = modelIntelligenceMeta(model);
+  return { ...model, intelligence, intelligence_score: intelligence.score };
+}
+function compareModelsByIntelligence(a, b) {
+  const ai = a.intelligence_score ?? a.intelligence?.score ?? modelIntelligenceMeta(a).score;
+  const bi = b.intelligence_score ?? b.intelligence?.score ?? modelIntelligenceMeta(b).score;
+  if (bi !== ai) return bi - ai;
+  if ((b.ctx || 0) !== (a.ctx || 0)) return (b.ctx || 0) - (a.ctx || 0);
+  if (a.id === DEFAULT_MODEL_ID) return -1;
+  if (b.id === DEFAULT_MODEL_ID) return 1;
+  return String(a.label || a.id).localeCompare(String(b.label || b.id));
+}
 
 function showApp() {
   document.getElementById('login-page').style.display = 'none';
@@ -1354,12 +1406,12 @@ async function loadModels({ preserveSelection = true } = {}) {
       const s = `${m.id || ''} ${m.label || m.name || ''}`.toLowerCase();
       return !(s.includes('uncensored') || s.includes('dolphin'));
     };
-    (d.builtin_models || []).forEach(m => all.push({ id:m.id, label:m.label, ctx:m.ctx||32768, censored:inferCensored(m), tags:[m.provider, m.protected?'protected':''].filter(Boolean) }));
-    (d.db_models || []).forEach(m => all.push({ id:m.id, label:m.name||m.id, ctx:m.context_length||m.ctx||4096, censored:inferCensored(m), tags:[m.provider, ...(m.tags||[])].filter(Boolean), cost_per_million_tokens:m.cost_per_million_tokens }));
+    (d.builtin_models || []).forEach(m => all.push(decorateModel({ id:m.id, label:m.label, ctx:m.ctx||32768, censored:inferCensored(m), tags:[m.provider, m.protected?'protected':''].filter(Boolean) })));
+    (d.db_models || []).forEach(m => all.push(decorateModel({ id:m.id, label:m.name||m.id, ctx:m.context_length||m.ctx||4096, censored:inferCensored(m), tags:[m.provider, ...(m.tags||[])].filter(Boolean), cost_per_million_tokens:m.cost_per_million_tokens })));
     const seen = new Set();
     const deduped = all
       .filter(m => !seen.has(m.id) && seen.add(m.id))
-      .sort((a,b) => (a.id === DEFAULT_MODEL_ID ? -1 : b.id === DEFAULT_MODEL_ID ? 1 : 0));
+      .sort(compareModelsByIntelligence);
     if (deduped.length) {
       S.models = deduped;
       S.customModels = d.db_models || [];
@@ -1734,6 +1786,10 @@ function modelStatusDotHtml(id) {
   const cls = h.status === 'bad' ? 'bad' : h.status === 'checking' ? 'checking' : '';
   return `<span class="model-status-dot ${cls}" title="${escAttr(h.reason || h.status)}"></span>`;
 }
+function modelIntelligenceBadgeHtml(model) {
+  const intel = model.intelligence || modelIntelligenceMeta(model);
+  return `<span class="model-intel-badge model-intel-${intel.tier}" title="Intelligence ${intel.score}/99">${intel.label} ${intel.score}</span>`;
+}
 function getNextWorkingModel(excludeId = S.modelId) {
   const candidates = (S.models || []).filter(m => m.id !== excludeId);
   return candidates.find(m => modelHealth(m.id).status !== 'bad') || candidates[0] || null;
@@ -1803,11 +1859,12 @@ function toggleModelDropdown(e) {
 }
 function renderModelDropdownHtml() {
   return `<div class="model-dropdown" onclick="event.stopPropagation()">
-    <div style="padding:8px 12px 4px;font-size:10px;color:#4a4a6a;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid #1a1a30;margin-bottom:4px">Select Model</div>
+    <div style="padding:8px 12px 4px;font-size:10px;color:#4a4a6a;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid #1a1a30;margin-bottom:4px" title="Sorted by intelligence, high to low">Models</div>
     ${S.models.map(m => `
       <div class="model-opt${m.id===S.modelId?' selected':''}" onclick="selectModel(${escAttr(JSON.stringify(String(m.id)))})">
         ${modelStatusDotHtml(m.id)}
         <span style="flex:1;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m.label)}</span>
+        ${modelIntelligenceBadgeHtml(m)}
         <span class="badge ${m.censored?'badge-free':'badge badge-warn'}" style="font-size:10px">${m.censored?'safe':'uncensored'}</span>
       </div>`).join('')}
   </div>`;
