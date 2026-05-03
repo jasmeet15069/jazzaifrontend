@@ -1,0 +1,64 @@
+name: Optional Backend Deploy
+
+on:
+  workflow_run:
+    workflows: ["Jazz Classic Frontend And Backend CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy-backend:
+    name: Deploy server14.py to SSH
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy when secrets are configured
+        env:
+          ENABLE_DEPLOY: ${{ secrets.JAZZ_ENABLE_BACKEND_DEPLOY }}
+          SSH_HOST: ${{ secrets.JAZZ_SERVER_HOST }}
+          SSH_USER: ${{ secrets.JAZZ_SERVER_USER }}
+          SSH_KEY: ${{ secrets.JAZZ_SSH_PRIVATE_KEY }}
+          SERVER_PATH: ${{ secrets.JAZZ_SERVER_PATH }}
+          SERVER_PYTHON: ${{ secrets.JAZZ_SERVER_PYTHON }}
+        run: |
+          set -euo pipefail
+
+          if [ "${ENABLE_DEPLOY:-}" != "true" ]; then
+            echo "Backend deploy skipped. Set JAZZ_ENABLE_BACKEND_DEPLOY=true to enable."
+            exit 0
+          fi
+
+          : "${SSH_HOST:?Missing JAZZ_SERVER_HOST}"
+          : "${SSH_USER:?Missing JAZZ_SERVER_USER}"
+          : "${SSH_KEY:?Missing JAZZ_SSH_PRIVATE_KEY}"
+
+          SERVER_PATH="${SERVER_PATH:-/root/jazzai}"
+          SERVER_PYTHON="${SERVER_PYTHON:-/root/jazzai/venv/bin/python}"
+          REMOTE_TMP="/tmp/server14_${GITHUB_SHA}.py"
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/jazz_deploy_key
+          chmod 600 ~/.ssh/jazz_deploy_key
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+          scp -i ~/.ssh/jazz_deploy_key backend_python_server/server14.py "$SSH_USER@$SSH_HOST:$REMOTE_TMP"
+          ssh -i ~/.ssh/jazz_deploy_key "$SSH_USER@$SSH_HOST" \
+            "SERVER_PATH='$SERVER_PATH' SERVER_PYTHON='$SERVER_PYTHON' REMOTE_TMP='$REMOTE_TMP' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$SERVER_PATH"
+          mkdir -p backups
+          ts="$(date +%Y%m%d_%H%M%S)"
+          cp server14.py "backups/server14.py.github_${ts}"
+          cp "$REMOTE_TMP" server14.py
+          "$SERVER_PYTHON" -m py_compile server14.py
+          oldpid="$(pgrep -f "^$SERVER_PYTHON server14.py$" | head -1 || true)"
+          if [ -n "$oldpid" ]; then kill "$oldpid"; sleep 2; fi
+          nohup "$SERVER_PYTHON" server14.py >> jazz.log 2>&1 &
+          sleep 8
+          curl -fsS http://127.0.0.1:8000/health >/dev/null
+          echo "Backend deployed and healthy."
+          REMOTE

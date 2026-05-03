@@ -1,0 +1,43 @@
+name: Jazz Classic Frontend And Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  frontend-index:
+    name: Check index.html scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Parse frontend JavaScript
+        run: node tools/check-index-js.mjs index.html
+
+  backend-python:
+    name: Compile backend server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile server14.py
+        run: python -m py_compile backend_python_server/server14.py
+
+      - name: Confirm secrets are not committed
+        run: |
+          test ! -f backend_python_server/.env
+          test -f backend_python_server/.env.example
