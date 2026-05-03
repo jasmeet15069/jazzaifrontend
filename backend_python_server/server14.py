@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 # â”€â”€â”€ stdlib â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-import asyncio, base64, csv, hashlib, html as html_lib, io, json, logging, math, os, platform, socket
+import asyncio, base64, csv, hashlib, hmac, html as html_lib, io, json, logging, math, os, platform, socket
 import re, secrets, shlex, shutil, subprocess, sys, tempfile, time, traceback, uuid
 import urllib.parse, urllib.request, urllib.error
 import zipfile
@@ -179,6 +179,11 @@ BOX_CLIENT_SECRET       = os.getenv("BOX_CLIENT_SECRET", "")
 CLICKUP_CLIENT_ID       = os.getenv("CLICKUP_CLIENT_ID", "")
 CLICKUP_CLIENT_SECRET   = os.getenv("CLICKUP_CLIENT_SECRET", "")
 STRIPE_SECRET_KEY       = os.getenv("STRIPE_SECRET_KEY", "")
+RAZORPAY_KEY_ID         = os.getenv("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET     = os.getenv("RAZORPAY_KEY_SECRET", "")
+RAZORPAY_CURRENCY       = os.getenv("RAZORPAY_CURRENCY", "INR").upper()
+RAZORPAY_PRO_MONTHLY    = int(os.getenv("RAZORPAY_PRO_MONTHLY_AMOUNT", "99900") or "99900")
+RAZORPAY_ENT_MONTHLY    = int(os.getenv("RAZORPAY_ENTERPRISE_MONTHLY_AMOUNT", "499900") or "499900")
 
 APP_BASE_URL       = os.getenv("APP_BASE_URL", "http://localhost:8000")
 LIVEKIT_URL        = os.getenv("LIVEKIT_URL", "")
@@ -209,7 +214,8 @@ _RUNTIME_ENV_KEYS = [
     "DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET",
     "BOX_CLIENT_ID", "BOX_CLIENT_SECRET",
     "CLICKUP_CLIENT_ID", "CLICKUP_CLIENT_SECRET",
-    "STRIPE_SECRET_KEY",
+    "STRIPE_SECRET_KEY", "RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_CURRENCY",
+    "RAZORPAY_PRO_MONTHLY_AMOUNT", "RAZORPAY_ENTERPRISE_MONTHLY_AMOUNT",
     "APP_BASE_URL", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET",
     "TTS_VOICE", "LIVY_URL", "LIVY_USER", "LIVY_PASSWORD",
 ]
@@ -721,6 +727,14 @@ CREATE TABLE IF NOT EXISTS coupons (
 CREATE TABLE IF NOT EXISTS coupon_redemptions (
     id TEXT PRIMARY KEY, coupon_id TEXT NOT NULL, user_id TEXT NOT NULL,
     redeemed_at TEXT NOT NULL, UNIQUE(coupon_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS billing_orders (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, provider TEXT DEFAULT 'razorpay',
+    tier TEXT NOT NULL, amount INTEGER NOT NULL, currency TEXT NOT NULL,
+    provider_order_id TEXT UNIQUE, provider_payment_id TEXT,
+    receipt TEXT, status TEXT DEFAULT 'created', raw_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS websites (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
@@ -5467,6 +5481,14 @@ class SubscriptionUpdate(BaseModel):
     user_id: str
     tier: str = Field(..., pattern="^(free|pro|enterprise)$")
 
+class BillingOrderReq(BaseModel):
+    tier: str = Field(..., pattern="^(pro|enterprise)$")
+
+class RazorpayVerifyReq(BaseModel):
+    razorpay_order_id: str = Field(..., min_length=5, max_length=80)
+    razorpay_payment_id: str = Field(..., min_length=5, max_length=80)
+    razorpay_signature: str = Field(..., min_length=20, max_length=256)
+
 class CouponCreate(BaseModel):
     code: Optional[str] = None
     grants_tier: str = Field(..., pattern="^(free|pro|enterprise)$")
@@ -7536,6 +7558,127 @@ async def get_usage(user: Dict = Depends(_get_current_user)):
             "connectors":        await db_count("SELECT COUNT(*) as c FROM connectors WHERE user_id=? AND is_active=1",(uid,)),
         }
     }
+
+def _billing_plan_amount(tier: str) -> int:
+    return {"pro": RAZORPAY_PRO_MONTHLY, "enterprise": RAZORPAY_ENT_MONTHLY}.get(tier, 0)
+
+def _billing_plan_rows(current: str = "free") -> List[Dict[str, Any]]:
+    return [
+        {
+            "tier": "free", "name": "Free", "amount": 0, "currency": RAZORPAY_CURRENCY,
+            "display": "Free", "current": current == "free",
+            "features": ["Starter chat usage", "Basic file analysis", "Limited documents"],
+        },
+        {
+            "tier": "pro", "name": "Pro", "amount": _billing_plan_amount("pro"), "currency": RAZORPAY_CURRENCY,
+            "display": f"{RAZORPAY_CURRENCY} {RAZORPAY_PRO_MONTHLY / 100:,.0f}/mo", "current": current == "pro",
+            "features": ["Higher usage limits", "RAG and workspace tools", "Priority model access"],
+        },
+        {
+            "tier": "enterprise", "name": "Enterprise", "amount": _billing_plan_amount("enterprise"), "currency": RAZORPAY_CURRENCY,
+            "display": f"{RAZORPAY_CURRENCY} {RAZORPAY_ENT_MONTHLY / 100:,.0f}/mo", "current": current == "enterprise",
+            "features": ["Unlimited-style limits", "Admin controls", "Advanced connectors and models"],
+        },
+    ]
+
+def _razorpay_post(path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    url = "https://api.razorpay.com/v1" + path
+    raw = json.dumps(payload).encode("utf-8")
+    auth = base64.b64encode(f"{RAZORPAY_KEY_ID}:{RAZORPAY_KEY_SECRET}".encode()).decode()
+    req = urllib.request.Request(
+        url,
+        data=raw,
+        headers={"Authorization": f"Basic {auth}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
+        raise HTTPException(502, f"Razorpay order failed: {detail[:500]}")
+
+@app.get("/billing/plans")
+async def billing_plans(user: Dict = Depends(_get_current_user)):
+    return {
+        "provider": "razorpay",
+        "enabled": bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET),
+        "key_id": RAZORPAY_KEY_ID,
+        "currency": RAZORPAY_CURRENCY,
+        "current": user.get("subscription", "free"),
+        "plans": _billing_plan_rows(user.get("subscription", "free")),
+    }
+
+@app.post("/billing/razorpay/order")
+async def billing_create_razorpay_order(req: BillingOrderReq, user: Dict = Depends(_get_current_user)):
+    if not (RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET):
+        raise HTTPException(400, "Razorpay is not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.")
+    uid = user.get("id") or user.get("sub", "")
+    amount = _billing_plan_amount(req.tier)
+    if amount <= 0:
+        raise HTTPException(400, "Invalid billing amount")
+    now = _utcnow()
+    receipt = f"jz_{uid[:8]}_{int(time.time())}_{secrets.token_hex(3)}"[:40]
+    payload = {
+        "amount": amount,
+        "currency": RAZORPAY_CURRENCY,
+        "receipt": receipt,
+        "notes": {"user_id": uid[:36], "tier": req.tier, "email": user.get("email", "")[:128]},
+    }
+    order = await asyncio.get_running_loop().run_in_executor(_executor, _razorpay_post, "/orders", payload)
+    await db_execute(
+        "INSERT INTO billing_orders(id,user_id,provider,tier,amount,currency,provider_order_id,receipt,status,raw_json,created_at,updated_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        (_new_id(), uid, "razorpay", req.tier, amount, RAZORPAY_CURRENCY, order.get("id"), receipt,
+         order.get("status", "created"), json.dumps(order), now, now),
+    )
+    return {
+        "key_id": RAZORPAY_KEY_ID,
+        "order_id": order.get("id"),
+        "amount": amount,
+        "currency": RAZORPAY_CURRENCY,
+        "tier": req.tier,
+        "name": "JAZZ AI",
+        "description": f"{req.tier.title()} plan",
+        "prefill": {"name": user.get("full_name", ""), "email": user.get("email", "")},
+    }
+
+@app.post("/billing/razorpay/verify")
+async def billing_verify_razorpay_payment(req: RazorpayVerifyReq, user: Dict = Depends(_get_current_user)):
+    if not RAZORPAY_KEY_SECRET:
+        raise HTTPException(400, "Razorpay is not configured")
+    uid = user.get("id") or user.get("sub", "")
+    order = await db_fetchone(
+        "SELECT * FROM billing_orders WHERE provider_order_id=? AND user_id=?",
+        (req.razorpay_order_id, uid),
+    )
+    if not order:
+        raise HTTPException(404, "Billing order not found")
+    digest = hmac.new(
+        RAZORPAY_KEY_SECRET.encode("utf-8"),
+        f"{req.razorpay_order_id}|{req.razorpay_payment_id}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(digest, req.razorpay_signature):
+        raise HTTPException(400, "Invalid Razorpay signature")
+    now = _utcnow()
+    tier = order["tier"]
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    await db_execute(
+        "UPDATE billing_orders SET provider_payment_id=?,status='paid',updated_at=? WHERE id=?",
+        (req.razorpay_payment_id, now, order["id"]),
+    )
+    await db_execute(
+        "UPDATE users SET subscription=?,subscription_expires_at=?,updated_at=? WHERE id=?",
+        (tier, expires_at, now, uid),
+    )
+    await db_execute(
+        "INSERT INTO audit_log(id,actor_id,target_id,action,detail_json,created_at) VALUES(?,?,?,?,?,?)",
+        (_new_id(), uid, uid, "razorpay_subscription_payment",
+         json.dumps({"tier": tier, "order_id": req.razorpay_order_id, "payment_id": req.razorpay_payment_id,
+                     "subscription_expires_at": expires_at}), now),
+    )
+    return {"ok": True, "tier": tier, "payment_id": req.razorpay_payment_id, "subscription_expires_at": expires_at}
 
 @app.post("/coupons/redeem")
 async def redeem_coupon(body: dict, user: Dict = Depends(_get_current_user)):

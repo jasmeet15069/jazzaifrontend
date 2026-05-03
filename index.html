@@ -525,6 +525,41 @@ select.input{cursor:pointer;appearance:none}
 .account-sep{height:1px;background:rgba(255,255,255,.12);margin:6px 8px}
 .chat-header .chat-toggle{display:none!important}
 
+/* Razorpay billing window */
+.billing-window{width:min(820px,calc(100vw - 24px));background:#0b0b18;border:1px solid #262647;border-radius:16px;overflow:hidden;box-shadow:0 32px 90px rgba(0,0,0,.68)}
+.billing-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid #1a1a30;background:linear-gradient(180deg,#15152b,#0b0b18)}
+.billing-title{font-family:'Syne',sans-serif;font-size:21px;font-weight:800;color:#f4f4ff;line-height:1.15}
+.billing-sub{font-size:12px;color:#9b9bc3;margin-top:5px;line-height:1.45}
+.billing-close{width:34px;height:34px;border:1px solid #252540;border-radius:8px;background:#101025;color:#b8b8df;cursor:pointer;display:grid;place-items:center;font-size:18px;flex-shrink:0}
+.billing-close:hover{border-color:#7c6ff7;color:#fff}
+.billing-status{display:flex;align-items:center;gap:8px;margin-top:12px;color:#b8b8df;font-size:12px}
+.billing-status-dot{width:8px;height:8px;border-radius:50%;background:#34d399;box-shadow:0 0 12px rgba(52,211,153,.7)}
+.billing-body{padding:18px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.billing-plan{border:1px solid #222240;background:linear-gradient(180deg,#111127,#0f0f20);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px;min-height:258px;position:relative}
+.billing-plan.current{border-color:#34d399;box-shadow:0 0 0 1px rgba(52,211,153,.18)}
+.billing-plan.pro{border-color:#7c6ff7}
+.billing-plan.enterprise{border-color:#f59e0b}
+.billing-plan-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.billing-plan-name{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#f3f3ff}
+.billing-chip{font-family:'DM Mono',monospace;font-size:10px;border:1px solid #2b2b4b;background:#15152d;color:#b8b8df;border-radius:999px;padding:4px 7px;line-height:1}
+.billing-plan.current .billing-chip{border-color:#34d399;color:#34d399;background:#052117}
+.billing-price{font-family:'DM Mono',monospace;font-size:20px;font-weight:800;color:#fff;letter-spacing:0}
+.billing-price small{font-size:11px;color:#8b8bb0;font-weight:700}
+.billing-features{display:grid;gap:8px;font-size:12px;color:#b9b9d6;line-height:1.35;margin:0;padding:0;list-style:none;flex:1}
+.billing-features li:before{content:"\2713";color:#34d399;margin-right:7px}
+.billing-action{height:42px;border-radius:9px;font-weight:800;justify-content:center}
+.billing-action[disabled]{opacity:.55;cursor:not-allowed}
+.billing-foot{padding:0 18px 18px;color:#77779d;font-size:11px;line-height:1.45;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.billing-error{margin:14px 18px 0;border:1px solid #7f1d1d;background:#2a0b0b;color:#fca5a5;border-radius:10px;padding:10px;font-size:12px}
+.billing-loading{padding:32px;color:#9b9bc3;font-size:13px}
+body.light .billing-window{background:#fff;border-color:#e5e7eb;color:#111827;box-shadow:0 28px 70px rgba(16,24,40,.18)}
+body.light .billing-head{background:linear-gradient(180deg,#f8f9ff,#fff);border-color:#e5e7eb}
+body.light .billing-title{color:#111827}
+body.light .billing-plan{background:linear-gradient(180deg,#fff,#f8f9ff);border-color:#e5e7eb}
+body.light .billing-plan-name,body.light .billing-price{color:#111827}
+body.light .billing-features,body.light .billing-sub,body.light .billing-foot{color:#667085}
+@media(max-width:720px){.billing-body{grid-template-columns:1fr}.billing-window{max-height:90svh;overflow:auto}}
+
 /* ── Workspace header ── */
 .workspace-header{padding:14px 20px;border-bottom:1px solid #1a1a30;display:flex;align-items:center;gap:12px;flex-shrink:0;background:#07070f}
 .page-back-btn{width:30px;height:30px;border:1px solid #1a1a30;border-radius:8px;background:#0f0f20;color:#c9c9e8;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;line-height:1;flex-shrink:0;transition:.15s}
@@ -3670,9 +3705,141 @@ function closeAccountMenu() {
   _accountOutsideHandler = null;
 }
 function upgradePlan() {
+  openBillingWindow();
+}
+let _razorpayScriptPromise = null;
+function loadRazorpayCheckout() {
+  if (window.Razorpay) return Promise.resolve(window.Razorpay);
+  if (_razorpayScriptPromise) return _razorpayScriptPromise;
+  _razorpayScriptPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.async = true;
+    s.onload = () => window.Razorpay ? resolve(window.Razorpay) : reject(new Error('Razorpay checkout did not load'));
+    s.onerror = () => reject(new Error('Could not load Razorpay checkout'));
+    document.head.appendChild(s);
+  });
+  return _razorpayScriptPromise;
+}
+function billingAmountText(plan) {
+  if (!plan || !plan.amount) return plan?.display || 'Free';
+  const currency = (plan.currency || 'INR').toUpperCase();
+  try {
+    return new Intl.NumberFormat(undefined, { style:'currency', currency, maximumFractionDigits:0 }).format(plan.amount / 100) + ' / mo';
+  } catch(e) {
+    return `${currency} ${Math.round(plan.amount / 100).toLocaleString()} / mo`;
+  }
+}
+function billingPlanLabel(tier) {
+  return ({ free:'Free', pro:'Pro', enterprise:'Enterprise' }[tier] || tier || 'Plan');
+}
+function updateSubscriptionBadge(tier) {
+  if (!S.user) S.user = {};
+  S.user.subscription = tier || 'free';
+  save();
+  const pl = document.getElementById('user-plan');
+  if (pl) {
+    pl.textContent = S.user.subscription;
+    pl.className = 'badge badge-' + S.user.subscription;
+  }
+}
+function renderBillingWindow(data) {
+  const plans = data?.plans || [];
+  const current = data?.current || S.user?.subscription || 'free';
+  const enabled = !!data?.enabled;
+  const enabledNote = enabled ? 'Razorpay Checkout ready' : 'Razorpay keys are not configured on the server yet';
+  const cards = plans.map(plan => {
+    const tier = plan.tier || 'free';
+    const currentPlan = tier === current || plan.current;
+    const canPay = enabled && !currentPlan && tier !== 'free' && Number(plan.amount || 0) > 0;
+    const buttonText = currentPlan ? 'Current plan' : (tier === 'free' ? 'Included' : (enabled ? `Upgrade to ${billingPlanLabel(tier)}` : 'Setup required'));
+    return `<div class="billing-plan ${escAttr(tier)} ${currentPlan ? 'current' : ''}">
+      <div class="billing-plan-top">
+        <div class="billing-plan-name">${escHtml(plan.name || billingPlanLabel(tier))}</div>
+        <span class="billing-chip">${currentPlan ? 'current' : escHtml(tier)}</span>
+      </div>
+      <div class="billing-price">${escHtml(billingAmountText(plan)).replace(' / mo',' <small>/ mo</small>')}</div>
+      <ul class="billing-features">${(plan.features || []).map(f => `<li>${escHtml(f)}</li>`).join('')}</ul>
+      <button class="btn ${canPay ? 'btn-primary' : 'btn-ghost'} billing-action" data-billing-tier="${escAttr(tier)}" onclick="startRazorpayCheckout('${escAttr(tier)}')" ${canPay ? '' : 'disabled'}>${escHtml(buttonText)}</button>
+    </div>`;
+  }).join('');
+  return `<div class="billing-window">
+    <div class="billing-head">
+      <div>
+        <div class="billing-title">Account billing</div>
+        <div class="billing-sub">Upgrade from your account menu and pay securely with Razorpay. Your plan updates after payment verification.</div>
+        <div class="billing-status"><span class="billing-status-dot" style="${enabled ? '' : 'background:#f59e0b;box-shadow:0 0 12px rgba(245,158,11,.7)'}"></span>${escHtml(enabledNote)}</div>
+      </div>
+      <button class="billing-close" onclick="closeModal()" aria-label="Close">x</button>
+    </div>
+    ${enabled ? '' : `<div class="billing-error">Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET on the backend to enable live payments.</div>`}
+    <div class="billing-body">${cards}</div>
+    <div class="billing-foot">
+      <span>Checkout orders are created only after you choose a paid plan.</span>
+      <span>Current plan: <b>${escHtml(current)}</b></span>
+    </div>
+  </div>`;
+}
+async function openBillingWindow() {
   closeAccountMenu();
-  navigate('settings');
-  setTimeout(() => settingsTab('usage', document.querySelectorAll('#main-content .tab')[2]), 0);
+  openModal(`<div class="billing-window"><div class="billing-head"><div><div class="billing-title">Account billing</div><div class="billing-sub">Loading plans...</div></div><button class="billing-close" onclick="closeModal()" aria-label="Close">x</button></div><div class="billing-loading">Checking available plans and payment status...</div></div>`);
+  try {
+    const data = await get('/billing/plans');
+    openModal(renderBillingWindow(data));
+  } catch(e) {
+    openModal(`<div class="billing-window"><div class="billing-head"><div><div class="billing-title">Account billing</div><div class="billing-sub">Could not load plans.</div></div><button class="billing-close" onclick="closeModal()" aria-label="Close">x</button></div><div class="billing-error">${escHtml(e.message || 'Billing unavailable')}</div><div class="billing-foot"><button class="btn btn-primary" onclick="openBillingWindow()">Retry</button></div></div>`);
+  }
+}
+async function startRazorpayCheckout(tier) {
+  if (!['pro','enterprise'].includes(tier)) return;
+  const btn = document.querySelector(`[data-billing-tier="${tier}"]`);
+  const oldText = btn?.textContent || '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Opening Razorpay...'; }
+  try {
+    const order = await post('/billing/razorpay/order', { tier });
+    const RazorpayCtor = await loadRazorpayCheckout();
+    const checkout = new RazorpayCtor({
+      key: order.key_id,
+      amount: order.amount,
+      currency: order.currency,
+      name: order.name || 'JAZZ AI',
+      description: order.description || `${billingPlanLabel(tier)} plan`,
+      order_id: order.order_id,
+      prefill: order.prefill || { name:S.user?.full_name || '', email:S.user?.email || '' },
+      theme: { color:'#7c6ff7' },
+      handler: async response => {
+        try {
+          const verified = await post('/billing/razorpay/verify', {
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature
+          });
+          updateSubscriptionBadge(verified.tier || tier);
+          await loadUsage().catch(() => {});
+          closeModal();
+          toast(`Plan upgraded to ${billingPlanLabel(verified.tier || tier)}`, 'ok');
+        } catch(e) {
+          toast(e.message || 'Payment verification failed', 'err');
+          if (btn) { btn.disabled = false; btn.textContent = oldText; }
+        }
+      },
+      modal: {
+        ondismiss: () => {
+          if (btn) { btn.disabled = false; btn.textContent = oldText; }
+          toast('Payment window closed', 'info');
+        }
+      }
+    });
+    checkout.on('payment.failed', response => {
+      const msg = response?.error?.description || response?.error?.reason || 'Payment failed';
+      toast(msg, 'err');
+      if (btn) { btn.disabled = false; btn.textContent = oldText; }
+    });
+    checkout.open();
+  } catch(e) {
+    toast(e.message || 'Could not start payment', 'err');
+    if (btn) { btn.disabled = false; btn.textContent = oldText; }
+  }
 }
 function openLanguageMenu() {
   closeAccountMenu();
