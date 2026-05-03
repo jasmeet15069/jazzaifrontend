@@ -1090,7 +1090,7 @@ function mergeLocalSidebarFeatures(rows = []) {
 // ═══════════════════════════════════════════════
 const S = {
   user: null, token: null, refresh: null,
-  page: 'chat', sessions: [], activeSession: null,
+  page: 'chat', sessions: [], archivedSessions: [], activeSession: null,
   messages: [], streaming: false, forceFreshChat: false,
   modelId: DEFAULT_MODEL_ID, useRag: true, useWeb: true, planMode: false, agentMode: false,
   notifications: [], notifCount: 0,
@@ -3391,6 +3391,21 @@ async function autoTitleSession(e, id) {
   e.stopPropagation();
   try { await post('/sessions/'+id+'/auto-title', {}); toast('Auto-title started','info'); setTimeout(loadSessions, 3000); } catch(err) { toast(err.message,'err'); }
 }
+async function archiveSession(e, id) {
+  e?.stopPropagation();
+  try {
+    await patch('/sessions/'+id, { is_archived:1 });
+    if (S.activeSession === id) {
+      S.activeSession = null;
+      S.forceFreshChat = true;
+      renderMessages([]);
+      navigate('chat');
+    }
+    await loadSessions();
+    await loadArchivedChats(false);
+    toast('Chat archived','ok');
+  } catch(err) { toast(err.message,'err'); }
+}
 async function deleteSession(e, id) {
   e.stopPropagation(); if (!confirm('Delete this session?')) return;
   try { await del('/sessions/'+id); if (S.activeSession===id) { S.activeSession=null; renderMessages([]); } loadSessions(); toast('Deleted','ok'); } catch(err) { toast(err.message,'err'); }
@@ -5210,15 +5225,31 @@ function settingsTab(tab, el) {
   if (el) el.classList.add('active');
   const u = S.user || {};
   const bodies = {
-    profile: `<div class="card" style="max-width:480px;display:grid;gap:12px">
-      <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Email</label><input class="input" value="${escHtml(u.email||'')}" disabled style="opacity:.5"></div>
-      <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Full Name</label><input class="input" id="set-name" value="${escHtml(u.full_name||'')}"></div>
-      <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Timezone</label><input class="input" id="set-tz" value="${escHtml(u.timezone||'UTC')}"></div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:#0a0a16;border-radius:8px">
-        <div><div style="font-size:13.5px;font-weight:500">Memory Learning</div><div style="font-size:12px;color:#4a4a6a">Auto-learn from conversations</div></div>
-        <input type="checkbox" id="set-mem" ${u.memory_enabled?'checked':''} style="accent-color:#7c6ff7;width:16px;height:16px;cursor:pointer">
+    profile: `<div style="max-width:760px;display:grid;gap:12px">
+      <div class="card" style="display:grid;gap:12px">
+        <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Email</label><input class="input" value="${escHtml(u.email||'')}" disabled style="opacity:.5"></div>
+        <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Full Name</label><input class="input" id="set-name" value="${escHtml(u.full_name||'')}"></div>
+        <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Timezone</label><input class="input" id="set-tz" value="${escHtml(u.timezone||'UTC')}"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:#0a0a16;border-radius:8px">
+          <div><div style="font-size:13.5px;font-weight:500">Memory Learning</div><div style="font-size:12px;color:#4a4a6a">Auto-learn from conversations</div></div>
+          <input type="checkbox" id="set-mem" ${u.memory_enabled?'checked':''} style="accent-color:#7c6ff7;width:16px;height:16px;cursor:pointer">
+        </div>
+        <button class="btn btn-primary" onclick="saveProfile()" style="justify-content:center">Save Changes</button>
       </div>
-      <button class="btn btn-primary" onclick="saveProfile()" style="justify-content:center">Save Changes</button>
+      <div class="card" style="display:grid;gap:12px">
+        <div style="display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap">
+          <div>
+            <div style="font-size:15px;font-weight:800;color:#e4e4f4">Chat archive</div>
+            <div style="font-size:12px;color:#9090b0;margin-top:3px">Hide old chats from the sidebar, then restore them whenever needed.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="loadArchivedChats(true)">Refresh</button>
+            <button class="btn btn-ghost btn-sm" onclick="restoreAllArchivedChats()">Restore all</button>
+            <button class="btn btn-danger btn-sm" onclick="archiveAllChats()">Archive all chats</button>
+          </div>
+        </div>
+        <div id="archived-chat-list" style="display:grid;gap:8px"></div>
+      </div>
     </div>`,
     workspace: `<div id="workspace-tools-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;max-width:980px">
       ${[
@@ -5263,6 +5294,7 @@ function settingsTab(tab, el) {
     </div>`,
   };
   document.getElementById('settings-body').innerHTML = bodies[tab] || '';
+  if (tab === 'profile') loadArchivedChats(false);
   if (tab === 'workspace') refreshWorkspaceTools();
   if (tab === 'usage') loadSettingsUsage();
 }
@@ -5287,6 +5319,80 @@ async function loadSettingsUsage() {
 async function saveProfile() {
   const name = document.getElementById('set-name').value.trim(), tz = document.getElementById('set-tz').value.trim(), mem = document.getElementById('set-mem').checked;
   try { await put('/auth/profile', { full_name:name, timezone:tz, memory_enabled:mem }); S.user = {...S.user, full_name:name, timezone:tz, memory_enabled:mem}; save(); document.getElementById('user-name').textContent = name||S.user.email; toast('Profile saved','ok'); } catch(e) { toast(e.message,'err'); }
+}
+async function loadArchivedChats(showToast = false) {
+  const list = document.getElementById('archived-chat-list');
+  if (list) list.innerHTML = `<div style="font-size:12px;color:#4a4a6a;padding:8px">Loading archived chats...</div>`;
+  try {
+    const d = await get('/sessions?archived=true&limit=200');
+    S.archivedSessions = d.sessions || [];
+    renderArchivedChats();
+    if (showToast) toast('Archive refreshed','ok');
+  } catch(e) {
+    if (list) list.innerHTML = `<div class="badge badge-err">${escHtml(e.message)}</div>`;
+  }
+}
+function renderArchivedChats() {
+  const list = document.getElementById('archived-chat-list');
+  if (!list) return;
+  const rows = S.archivedSessions || [];
+  if (!rows.length) {
+    list.innerHTML = `<div style="border:1px dashed #252540;border-radius:8px;padding:18px;text-align:center;color:#73739a;font-size:13px">No archived chats yet.</div>`;
+    return;
+  }
+  list.innerHTML = rows.map(s => `<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;border:1px solid #1a1a30;border-radius:8px;background:#0a0a16;padding:10px">
+    <div style="min-width:0">
+      <div style="font-size:13px;font-weight:700;color:#e4e4f4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(s.title || 'New Chat')}</div>
+      <div style="font-size:11px;color:#73739a;margin-top:3px">${s.turn_count || 0} turns · ${fmtDate(s.last_message_at || s.created_at)}</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn btn-ghost btn-xs" onclick="restoreArchivedChat('${escAttr(s.id)}', true)">Open</button>
+      <button class="btn btn-ghost btn-xs" onclick="restoreArchivedChat('${escAttr(s.id)}')">Restore</button>
+      <button class="btn btn-danger btn-xs" onclick="deleteArchivedChat('${escAttr(s.id)}')">Delete</button>
+    </div>
+  </div>`).join('');
+}
+async function archiveAllChats() {
+  if (!confirm('Archive all visible chat history? Archived chats can be restored from this panel.')) return;
+  try {
+    const d = await post('/sessions/archive-all', {});
+    S.activeSession = null;
+    S.forceFreshChat = true;
+    renderMessages([]);
+    await loadSessions();
+    await loadArchivedChats(false);
+    toast(`Archived ${d.archived || 0} chat(s)`, 'ok');
+  } catch(e) { toast(e.message, 'err'); }
+}
+async function restoreArchivedChat(id, openAfter = false) {
+  try {
+    await patch('/sessions/'+id, { is_archived:0 });
+    await loadSessions();
+    await loadArchivedChats(false);
+    toast('Chat restored','ok');
+    if (openAfter) {
+      closeModal();
+      navigate('chat');
+      setTimeout(() => loadSession(id), 0);
+    }
+  } catch(e) { toast(e.message, 'err'); }
+}
+async function restoreAllArchivedChats() {
+  if (!confirm('Restore all archived chats to the sidebar?')) return;
+  try {
+    const d = await post('/sessions/unarchive-all', {});
+    await loadSessions();
+    await loadArchivedChats(false);
+    toast(`Restored ${d.restored || 0} chat(s)`, 'ok');
+  } catch(e) { toast(e.message, 'err'); }
+}
+async function deleteArchivedChat(id) {
+  if (!confirm('Permanently delete this archived chat?')) return;
+  try {
+    await del('/sessions/'+id);
+    await loadArchivedChats(false);
+    toast('Archived chat deleted','ok');
+  } catch(e) { toast(e.message, 'err'); }
 }
 async function changePassword() {
   const cur = document.getElementById('pw-cur').value, nw = document.getElementById('pw-new').value, con = document.getElementById('pw-con').value;

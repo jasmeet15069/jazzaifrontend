@@ -5726,13 +5726,15 @@ async def auth_update_profile(req: ProfileUpdate, user: Dict = Depends(_get_curr
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.get("/sessions")
-async def list_sessions(limit: int = 60, offset: int = 0, user: Dict = Depends(_get_current_user)):
+async def list_sessions(limit: int = 60, offset: int = 0, archived: bool = False, user: Dict = Depends(_get_current_user)):
     uid = user.get("id") or user.get("sub","")
+    limit = max(1, min(200, int(limit or 60)))
+    offset = max(0, int(offset or 0))
     rows = await db_fetchall(
         "SELECT id,title,model_id,turn_count,last_message_at,is_pinned,is_archived,created_at"
-        " FROM chat_sessions WHERE user_id=? AND is_archived=0"
+        " FROM chat_sessions WHERE user_id=? AND is_archived=?"
         " ORDER BY is_pinned DESC,last_message_at DESC LIMIT ? OFFSET ?",
-        (uid, limit, offset))
+        (uid, 1 if archived else 0, limit, offset))
     return {"sessions":rows}
 
 @app.get("/sessions/search")
@@ -5785,6 +5787,26 @@ async def create_session(body: dict, user: Dict = Depends(_get_current_user)):
         "INSERT INTO chat_sessions(id,user_id,title,model_id,created_at,updated_at) VALUES(?,?,?,?,?,?)",
         (sid, uid, body.get("title","New Chat"), model, now, now))
     return await db_fetchone("SELECT * FROM chat_sessions WHERE id=?", (sid,))
+
+@app.post("/sessions/archive-all")
+async def archive_all_sessions(user: Dict = Depends(_get_current_user)):
+    uid = user.get("id") or user.get("sub","")
+    now = _utcnow()
+    count = await db_count("SELECT COUNT(*) as c FROM chat_sessions WHERE user_id=? AND is_archived=0", (uid,))
+    await db_execute(
+        "UPDATE chat_sessions SET is_archived=1,is_pinned=0,updated_at=? WHERE user_id=? AND is_archived=0",
+        (now, uid))
+    return {"ok": True, "archived": count}
+
+@app.post("/sessions/unarchive-all")
+async def unarchive_all_sessions(user: Dict = Depends(_get_current_user)):
+    uid = user.get("id") or user.get("sub","")
+    now = _utcnow()
+    count = await db_count("SELECT COUNT(*) as c FROM chat_sessions WHERE user_id=? AND is_archived=1", (uid,))
+    await db_execute(
+        "UPDATE chat_sessions SET is_archived=0,updated_at=? WHERE user_id=? AND is_archived=1",
+        (now, uid))
+    return {"ok": True, "restored": count}
 
 @app.get("/sessions/{sid}")
 async def get_session(sid: str, user: Dict = Depends(_get_current_user)):
