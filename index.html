@@ -90,6 +90,28 @@ body:not(.light) #hljs-theme-light{display:none}
 .msg-user summary::-webkit-details-marker{display:none}
 .msg-user pre{white-space:pre-wrap;overflow:auto;max-height:42svh;margin:8px 0 0;font-family:'DM Mono',monospace;font-size:12px;line-height:1.55;color:#e4e4f4}
 .msg-user.long-input{max-width:min(860px,88%);width:auto}
+.msg-user-prompt{white-space:pre-wrap;margin-bottom:8px}
+.paste-tray{display:none;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.paste-chip,.paste-card-msg{border:1px solid #252540;background:#111124;color:#e4e4f4;border-radius:10px;cursor:pointer;transition:.15s;text-align:left;font-family:'Outfit',sans-serif}
+.paste-chip{display:inline-flex;gap:10px;align-items:flex-start;max-width:min(360px,100%);padding:8px 10px;position:relative}
+.paste-chip:hover,.paste-card-msg:hover{border-color:#7c6ff7;background:#15152d}
+.paste-chip-icon,.paste-card-icon{display:inline-flex;align-items:center;justify-content:center;border:1px solid #34345a;background:#0c0c1a;color:#a8a8ff;font-family:'DM Mono',monospace;font-weight:800;flex-shrink:0}
+.paste-chip-icon{width:36px;height:42px;border-radius:8px;font-size:10px}
+.paste-chip-body,.paste-card-body{min-width:0;display:flex;flex-direction:column;gap:3px}
+.paste-chip-title,.paste-card-title{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.paste-chip-title{font-size:12px;max-width:250px}.paste-card-title{font-size:14px}
+.paste-chip-meta,.paste-card-meta{font-family:'DM Mono',monospace;color:#9090b0;font-size:11px;line-height:1.4}
+.paste-chip-preview{font-family:'DM Mono',monospace;color:#6f6f98;font-size:10px;line-height:1.35;max-height:42px;overflow:hidden;word-break:break-word}
+.paste-remove{position:absolute;top:6px;right:6px;width:20px;height:20px;border-radius:50%;border:1px solid #252540;background:#0c0c1a;color:#9090b0;cursor:pointer;line-height:18px;font-size:12px}
+.paste-remove:hover{border-color:#f87171;color:#f87171}
+.paste-card-list{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.paste-card-msg{display:flex;gap:12px;align-items:center;width:min(360px,100%);padding:14px 16px}
+.paste-card-icon{width:48px;height:56px;border-radius:10px;font-size:11px;transform:rotate(-2deg)}
+.paste-viewer{width:min(860px,94vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden}
+.paste-viewer-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}
+.paste-viewer-title{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#f4f4ff}
+.paste-viewer-meta{font-family:'DM Mono',monospace;color:#9090b0;font-size:11px;margin-top:5px}
+.paste-viewer-pre{background:#111124;border:1px solid #252540;border-radius:10px;padding:16px;overflow:auto;white-space:pre-wrap;font-family:'DM Mono',monospace;font-size:12px;line-height:1.55;color:#f1f1ff;max-height:68vh}
 .msg-user img{max-width:100%;border-radius:8px;margin-top:6px;border:1px solid #1a1a30;display:block}
 .msg-ai{font-size:14px;line-height:1.7;max-width:100%;word-break:break-word}
 .msg-ai pre{background:#0c0c1a;border:1px solid #1a1a30;border-radius:8px;overflow-x:auto;margin:10px 0;position:relative}
@@ -601,6 +623,17 @@ body.light .account-row{color:var(--text)!important}
 body.light .account-row:hover{background:#eef1ff!important;color:var(--accent)!important}
 body.light .account-sep{background:var(--b)!important}
 body.light .model-retry-bar{background:#fff7ed!important;border-color:#fed7aa!important;color:#c2410c!important}
+body.light .paste-chip,
+body.light .paste-card-msg{background:#fff!important;border-color:var(--b)!important;color:var(--text)!important}
+body.light .paste-chip:hover,
+body.light .paste-card-msg:hover{background:#f8faff!important;border-color:var(--accent)!important}
+body.light .paste-chip-icon,
+body.light .paste-card-icon,
+body.light .paste-viewer-pre{background:#f8fafc!important;border-color:var(--b)!important;color:var(--text)!important}
+body.light .paste-remove{background:#fff!important;border-color:var(--b)!important;color:var(--muted)!important}
+body.light .paste-chip-meta,
+body.light .paste-card-meta,
+body.light .paste-viewer-meta{color:var(--muted)!important}
 body.light .input,
 body.light select.input,
 body.light textarea.input{background:#fff!important;border-color:var(--b)!important;color:var(--text)!important;box-shadow:0 1px 2px rgba(16,24,40,.03)}
@@ -1026,7 +1059,7 @@ const S = {
   ws: null, wsRetry: 0,
   recording: false, mediaRec: null, audioChunks: [], voiceMode: false,
   liveVoiceRoom: null, liveVoiceTrack: null, liveVoiceSession: null, liveVoiceConnected: false,
-  usage: null, pendingImage: null, pendingAttachments: [], fileLibrary: [], filesPanelOpen: false,
+  usage: null, pendingImage: null, pendingAttachments: [], pendingPastes: [], pasteViewMap: {}, fileLibrary: [], filesPanelOpen: false,
   chatQueue: [], queueRunning: false,
   chatSearchOpen: false, chatSearchQuery: '', chatSearchResults: [], chatSearchTimer: null, chatSearchLoading: false,
   lastTokens: { input:0, output:0, total:0 },
@@ -1669,6 +1702,7 @@ async function chat({ sessionId } = {}) {
         <div id="model-retry-bar" class="model-retry-bar"></div>
 
         <div id="attach-tray" class="attach-tray"></div>
+        <div id="paste-tray" class="paste-tray"></div>
 
         <!-- Image preview -->
         <div id="img-preview-bar">
@@ -2189,6 +2223,145 @@ function renderToolTimeline(events = []) {
 function parseToolEvents(raw) {
   try { const v = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw; return Array.isArray(v) ? v : []; } catch(e) { return []; }
 }
+const LONG_PASTE_WORD_LIMIT = 800;
+const LONG_PASTE_LINE_LIMIT = 80;
+const LONG_PASTE_CHAR_LIMIT = 6000;
+function pasteStats(text = '') {
+  const raw = String(text || '');
+  const trimmed = raw.trim();
+  const words = trimmed ? trimmed.split(/\s+/).filter(Boolean).length : 0;
+  const lines = raw ? raw.split(/\r?\n/).length : 0;
+  return { chars: raw.length, words, lines, kb: raw.length / 1024 };
+}
+function shouldCompactPaste(text = '') {
+  const s = pasteStats(text);
+  return s.words >= LONG_PASTE_WORD_LIMIT || s.lines >= LONG_PASTE_LINE_LIMIT || s.chars >= LONG_PASTE_CHAR_LIMIT;
+}
+function pasteLabel(stats) {
+  const bits = [`${stats.chars.toLocaleString()} chars`, `${stats.lines.toLocaleString()} lines`];
+  if (stats.words) bits.splice(1, 0, `${stats.words.toLocaleString()} words`);
+  return bits.join(' / ');
+}
+function pastePreview(text = '', max = 220) {
+  return String(text || '').trim().replace(/\s+/g, ' ').slice(0, max);
+}
+function pasteViewRemember(text = '', title = 'Pasted content') {
+  const raw = String(text || '');
+  let h = 0;
+  for (let i = 0; i < raw.length; i++) h = ((h << 5) - h + raw.charCodeAt(i)) | 0;
+  const id = 'paste_' + Math.abs(h) + '_' + raw.length;
+  S.pasteViewMap = S.pasteViewMap || {};
+  S.pasteViewMap[id] = { text: raw, title };
+  return id;
+}
+function openPasteViewer(id) {
+  const item = S.pasteViewMap?.[id];
+  if (!item) { toast('Pasted content is not available in this view', 'err'); return; }
+  const stats = pasteStats(item.text);
+  openModal(`<div class="modal paste-viewer">
+    <div class="paste-viewer-head">
+      <div>
+        <div class="paste-viewer-title">${escHtml(item.title || 'Pasted content')}</div>
+        <div class="paste-viewer-meta">${escHtml(pasteLabel(stats))} / Formatting may be inconsistent from source</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="copyPasteViewer('${escAttr(id)}')">Copy</button>
+        <button class="btn btn-ghost btn-sm" onclick="closeModal()">x</button>
+      </div>
+    </div>
+    <pre class="paste-viewer-pre">${escHtml(item.text)}</pre>
+  </div>`);
+}
+function copyPasteViewer(id) {
+  const item = S.pasteViewMap?.[id];
+  if (!item) return;
+  navigator.clipboard?.writeText(item.text).then(() => toast('Pasted content copied', 'ok')).catch(() => toast('Copy failed', 'err'));
+}
+function renderPasteChip(paste) {
+  const stats = paste.stats || pasteStats(paste.text);
+  const id = pasteViewRemember(paste.text, paste.title || 'Pasted content');
+  return `<button class="paste-chip" type="button" onclick="openPasteViewer('${escAttr(id)}')">
+    <span class="paste-chip-icon">TXT</span>
+    <span class="paste-chip-body">
+      <span class="paste-chip-title">${escHtml(paste.title || 'Pasted content')}</span>
+      <span class="paste-chip-meta">${escHtml(pasteLabel(stats))}</span>
+      <span class="paste-chip-preview">${escHtml(pastePreview(paste.text))}${paste.text.length > 220 ? '...' : ''}</span>
+    </span>
+    <span class="paste-remove" onclick="event.stopPropagation();removePendingPaste('${escAttr(paste.id)}')" title="Remove">x</span>
+  </button>`;
+}
+function renderPasteTray() {
+  const tray = document.getElementById('paste-tray');
+  if (!tray) return;
+  const items = S.pendingPastes || [];
+  if (!items.length) { tray.style.display = 'none'; tray.innerHTML = ''; return; }
+  tray.style.display = 'flex';
+  tray.innerHTML = items.map(renderPasteChip).join('');
+}
+function addPendingPaste(text = '') {
+  const raw = String(text || '');
+  if (!raw.trim()) return;
+  const stats = pasteStats(raw);
+  S.pendingPastes = [...(S.pendingPastes || []), {
+    id: 'paste_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+    title: 'Pasted content',
+    text: raw,
+    stats,
+  }].slice(0, 8);
+  renderPasteTray();
+  toast(`Pasted content attached (${pasteLabel(stats)})`, 'info');
+}
+function removePendingPaste(id) {
+  S.pendingPastes = (S.pendingPastes || []).filter(p => p.id !== id);
+  renderPasteTray();
+}
+function safePasteBody(text = '') {
+  return String(text || '').replace(/<\/JAZZ_PASTED_CONTENT>/gi, '<\\/JAZZ_PASTED_CONTENT>');
+}
+function buildMessageWithPastes(baseMessage = '', pastes = []) {
+  const prompt = String(baseMessage || '').trim();
+  if (!pastes.length) return prompt;
+  const head = prompt || 'Please analyze the pasted content.';
+  const sections = pastes.map((p, i) => {
+    const stats = p.stats || pasteStats(p.text);
+    const title = p.title || `Pasted content ${i + 1}`;
+    return `<JAZZ_PASTED_CONTENT title="${escAttr(title)}" chars="${stats.chars}" words="${stats.words}" lines="${stats.lines}">\n${safePasteBody(p.text)}\n</JAZZ_PASTED_CONTENT>`;
+  }).join('\n\n');
+  return `${head}\n\n${sections}`;
+}
+function parseAttrString(raw = '') {
+  const out = {};
+  String(raw || '').replace(/([a-z0-9_-]+)="([^"]*)"/gi, (_, k, v) => { out[k] = v; return ''; });
+  return out;
+}
+function splitPastedContentMessage(raw = '') {
+  const text = String(raw ?? '');
+  const sections = [];
+  const re = /<JAZZ_PASTED_CONTENT\b([^>]*)>\n?([\s\S]*?)\n?<\/JAZZ_PASTED_CONTENT>/gi;
+  const prompt = text.replace(re, (_, attrs, body) => {
+    const meta = parseAttrString(attrs);
+    sections.push({
+      title: meta.title || 'Pasted content',
+      text: String(body || '').replace(/<\\\/JAZZ_PASTED_CONTENT>/gi, '</JAZZ_PASTED_CONTENT>'),
+    });
+    return '';
+  }).trim();
+  return { prompt, sections };
+}
+function renderPastedMessageCards(sections = []) {
+  if (!sections.length) return '';
+  return `<div class="paste-card-list">${sections.map((section, i) => {
+    const stats = pasteStats(section.text);
+    const id = pasteViewRemember(section.text, section.title || `Pasted content ${i + 1}`);
+    return `<button class="paste-card-msg" type="button" onclick="openPasteViewer('${escAttr(id)}')">
+      <span class="paste-card-icon">TXT</span>
+      <span class="paste-card-body">
+        <span class="paste-card-title">${escHtml(section.title || 'Pasted content')}</span>
+        <span class="paste-card-meta">${escHtml(pasteLabel(stats))}</span>
+      </span>
+    </button>`;
+  }).join('')}</div>`;
+}
 function renderUserContent(text, extraHtml = '') {
   const raw = String(text ?? '');
   const isLong = raw.length > 1800 || raw.split(/\r?\n/).length > 24;
@@ -2202,6 +2375,23 @@ function renderUserContent(text, extraHtml = '') {
       <div style="font-size:12px;color:#9090b0;margin-top:6px">${escHtml(preview)}${raw.length > 420 ? '…' : ''}</div>
       <pre>${escHtml(raw)}</pre>
     </details>
+    ${extraHtml}
+  </div>`;
+}
+function renderUserContent(text, extraHtml = '') {
+  const raw = String(text ?? '');
+  const parsed = splitPastedContentMessage(raw);
+  if (parsed.sections.length) {
+    return `<div class="msg-user long-input">
+      ${parsed.prompt ? `<div class="msg-user-prompt">${escHtml(parsed.prompt)}</div>` : ''}
+      ${renderPastedMessageCards(parsed.sections)}
+      ${extraHtml}
+    </div>`;
+  }
+  const isLong = shouldCompactPaste(raw) || raw.length > 1800 || raw.split(/\r?\n/).length > 24;
+  if (!isLong) return `<div class="msg-user">${escHtml(raw)}${extraHtml}</div>`;
+  return `<div class="msg-user long-input">
+    ${renderPastedMessageCards([{ title:'Long input', text:raw }])}
     ${extraHtml}
   </div>`;
 }
@@ -2761,14 +2951,18 @@ function isToolSlashMessage(text) {
 function submitChat() {
   const inp = document.getElementById('chat-input');
   const attachments = [...(S.pendingAttachments || [])];
-  let msg = inp.value.trim();
+  const pastes = [...(S.pendingPastes || [])];
+  const typedMsg = inp.value.trim();
+  let msg = buildMessageWithPastes(typedMsg, pastes);
   if (!msg && !attachments.length) return;
   if (!msg) msg = 'Please analyze the attached file(s).';
   inp.value = ''; inp.style.height = 'auto';
   document.getElementById('slash-palette').style.display = 'none';
   S.pendingAttachments = [];
+  S.pendingPastes = [];
   S.pendingImage = null;
   renderAttachmentTray();
+  renderPasteTray();
   updateFilesBadge();
   if (S.filesPanelOpen) renderFilesPanel();
   const bar = document.getElementById('img-preview-bar'); if (bar) bar.style.display = 'none';
@@ -3001,6 +3195,14 @@ document.addEventListener('paste', e => {
   if (pastedFiles.length) {
     e.preventDefault();
     addPendingFiles(pastedFiles);
+    return;
+  }
+  const text = e.clipboardData?.getData('text/plain') || '';
+  if (text && shouldCompactPaste(text)) {
+    e.preventDefault();
+    addPendingPaste(text);
+    const inp = document.getElementById('chat-input');
+    if (inp) { inp.focus(); autoResize(inp); }
     return;
   }
   for (const item of items) {
