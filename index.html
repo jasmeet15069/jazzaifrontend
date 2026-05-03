@@ -173,6 +173,7 @@ select.input{cursor:pointer;appearance:none}
 .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;font-family:'DM Mono',monospace}
 .badge-free{background:#1a1a30;color:#9090b0}
 .badge-pro{background:#1e1b4b;color:#818cf8}
+.badge-premium{background:#062a24;color:#34d399}
 .badge-enterprise{background:#1c1407;color:#fbbf24}
 .badge-ok{background:#064e3b;color:#34d399}
 .badge-err{background:#450a0a;color:#f87171}
@@ -534,10 +535,11 @@ select.input{cursor:pointer;appearance:none}
 .billing-close:hover{border-color:#7c6ff7;color:#fff}
 .billing-status{display:flex;align-items:center;gap:8px;margin-top:12px;color:#b8b8df;font-size:12px}
 .billing-status-dot{width:8px;height:8px;border-radius:50%;background:#34d399;box-shadow:0 0 12px rgba(52,211,153,.7)}
-.billing-body{padding:18px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.billing-body{padding:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px}
 .billing-plan{border:1px solid #222240;background:linear-gradient(180deg,#111127,#0f0f20);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px;min-height:258px;position:relative}
 .billing-plan.current{border-color:#34d399;box-shadow:0 0 0 1px rgba(52,211,153,.18)}
 .billing-plan.pro{border-color:#7c6ff7}
+.billing-plan.premium{border-color:#34d399}
 .billing-plan.enterprise{border-color:#f59e0b}
 .billing-plan-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .billing-plan-name{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#f3f3ff}
@@ -696,6 +698,7 @@ body.light .copy-btn{background:#e6e9f5!important;color:var(--muted)!important}
 body.light .copy-btn:hover{background:var(--accent)!important;color:#fff!important}
 body.light .badge-free{background:#eceff7;color:#667085}
 body.light .badge-pro{background:#eef1ff;color:#5b4fe8}
+body.light .badge-premium{background:#dcfce7;color:#047857}
 body.light .badge-enterprise{background:#fff7dc;color:#a16207}
 body.light .badge-ok{background:#dcfce7;color:#047857}
 body.light .badge-err{background:#fee2e2;color:#dc2626}
@@ -3731,7 +3734,7 @@ function billingAmountText(plan) {
   }
 }
 function billingPlanLabel(tier) {
-  return ({ free:'Free', pro:'Pro', enterprise:'Enterprise' }[tier] || tier || 'Plan');
+  return ({ free:'Free', pro:'Pro', premium:'Premium', enterprise:'Enterprise' }[tier] || tier || 'Plan');
 }
 function updateSubscriptionBadge(tier) {
   if (!S.user) S.user = {};
@@ -3791,7 +3794,7 @@ async function openBillingWindow() {
   }
 }
 async function startRazorpayCheckout(tier) {
-  if (!['pro','enterprise'].includes(tier)) return;
+  if (!['pro','premium','enterprise'].includes(tier)) return;
   const btn = document.querySelector(`[data-billing-tier="${tier}"]`);
   const oldText = btn?.textContent || '';
   if (btn) { btn.disabled = true; btn.textContent = 'Opening Razorpay...'; }
@@ -6691,12 +6694,12 @@ async function adminTestSkill(id) {
     openModal(`<div class="modal" style="width:680px"><div style="font-weight:700;margin-bottom:10px">Skill Test: ${escHtml(d.skill?.name||'')}</div><div class="msg-ai">${renderMd(d.answer||'')}</div><button class="btn btn-ghost" style="width:100%;margin-top:12px;justify-content:center" onclick="closeModal()">Close</button></div>`);
   } catch(e) { toast(e.message,'err'); }
 }
-async function adminUpgradePlan(uid, email) { const tier = prompt(`Plan for ${email}:\nfree / pro / enterprise`); if (!['free','pro','enterprise'].includes(tier)) return; try { await put('/admin/subscription', { user_id:uid, tier }); toast('Plan updated','ok'); adminTab('users',null); } catch(e) { toast(e.message,'err'); } }
+async function adminUpgradePlan(uid, email) { const tier = prompt(`Plan for ${email}:\nfree / pro / premium / enterprise`); if (!['free','pro','premium','enterprise'].includes(tier)) return; try { await put('/admin/subscription', { user_id:uid, tier }); toast('Plan updated','ok'); adminTab('users',null); } catch(e) { toast(e.message,'err'); } }
 async function adminImpersonate(uid) { try { const d = await post('/admin/users/'+uid+'/impersonate', {}); const orig = S.token; S.token = d.access_token; document.body.insertAdjacentHTML('afterbegin', `<div id="imp-banner" style="background:#431407;border-bottom:2px solid #fbbf24;padding:8px 16px;font-size:13px;font-weight:600;color:#fbbf24;display:flex;align-items:center;justify-content:space-between;position:fixed;top:0;left:0;right:0;z-index:1000">⚠️ Impersonating — <button onclick="stopImpersonate('${orig}')" class="btn btn-ghost btn-sm" style="color:#fbbf24;border-color:#fbbf24">Return to Admin</button></div>`); document.body.style.paddingTop = '44px'; toast('Impersonating','warn'); } catch(e) { toast(e.message,'err'); } }
 function stopImpersonate(orig) { S.token = orig; document.getElementById('imp-banner')?.remove(); document.body.style.paddingTop = '0'; }
 async function adminDeleteUser(uid, email) { if (!confirm('Delete user '+email+'?')) return; try { await del('/admin/users/'+uid); toast('Deleted','ok'); adminTab('users',null); } catch(e) { toast(e.message,'err'); } }
 async function adminBroadcast() { const title = prompt('Title:'); if (!title) return; const msg = prompt('Message:'); if (!msg) return; try { await post('/admin/broadcast', { title, message:msg, type:'info' }); toast('Broadcast sent','ok'); } catch(e) { toast(e.message,'err'); } }
-async function adminCreateCoupon() { const code = prompt('Coupon code:'); if (!code) return; const tier = prompt('Tier (free/pro/enterprise):'); if (!['free','pro','enterprise'].includes(tier)) return; const days = prompt('Days:','30'); try { await post('/admin/coupons', { code, grants_tier:tier, duration_days:parseInt(days)||30, max_uses:100 }); toast('Coupon created','ok'); } catch(e) { toast(e.message,'err'); } }
+async function adminCreateCoupon() { const code = prompt('Coupon code:'); if (!code) return; const tier = prompt('Tier (free/pro/premium/enterprise):'); if (!['free','pro','premium','enterprise'].includes(tier)) return; const days = prompt('Days:','30'); try { await post('/admin/coupons', { code, grants_tier:tier, duration_days:parseInt(days)||30, max_uses:100 }); toast('Coupon created','ok'); } catch(e) { toast(e.message,'err'); } }
 function adminAddModelModal() {
   openModal(`<div class="modal" style="width:520px">
     <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:700;margin-bottom:16px">Add AI Model</div>

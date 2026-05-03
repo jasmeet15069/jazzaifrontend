@@ -182,7 +182,8 @@ STRIPE_SECRET_KEY       = os.getenv("STRIPE_SECRET_KEY", "")
 RAZORPAY_KEY_ID         = os.getenv("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET     = os.getenv("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_CURRENCY       = os.getenv("RAZORPAY_CURRENCY", "INR").upper()
-RAZORPAY_PRO_MONTHLY    = int(os.getenv("RAZORPAY_PRO_MONTHLY_AMOUNT", "99900") or "99900")
+RAZORPAY_PRO_MONTHLY    = int(os.getenv("RAZORPAY_PRO_MONTHLY_AMOUNT", "20000") or "20000")
+RAZORPAY_PREMIUM_MONTHLY= int(os.getenv("RAZORPAY_PREMIUM_MONTHLY_AMOUNT", "99900") or "99900")
 RAZORPAY_ENT_MONTHLY    = int(os.getenv("RAZORPAY_ENTERPRISE_MONTHLY_AMOUNT", "499900") or "499900")
 
 APP_BASE_URL       = os.getenv("APP_BASE_URL", "http://localhost:8000")
@@ -215,7 +216,7 @@ _RUNTIME_ENV_KEYS = [
     "BOX_CLIENT_ID", "BOX_CLIENT_SECRET",
     "CLICKUP_CLIENT_ID", "CLICKUP_CLIENT_SECRET",
     "STRIPE_SECRET_KEY", "RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_CURRENCY",
-    "RAZORPAY_PRO_MONTHLY_AMOUNT", "RAZORPAY_ENTERPRISE_MONTHLY_AMOUNT",
+    "RAZORPAY_PRO_MONTHLY_AMOUNT", "RAZORPAY_PREMIUM_MONTHLY_AMOUNT", "RAZORPAY_ENTERPRISE_MONTHLY_AMOUNT",
     "APP_BASE_URL", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET",
     "TTS_VOICE", "LIVY_URL", "LIVY_USER", "LIVY_PASSWORD",
 ]
@@ -281,10 +282,11 @@ THINKING_MIN_LENGTH = 50
 
 SUBSCRIPTION_LIMITS: Dict[str, Dict[str, Any]] = {
     "free":       {"messages_per_day":100,"documents":10,"max_file_mb":10,"agent_jobs":3,"websites":5,"code_runs_per_day":50,"api_keys":3,"memories":100,"connectors":3},
-    "pro":        {"messages_per_day":-1,"documents":100,"max_file_mb":50,"agent_jobs":20,"websites":100,"code_runs_per_day":-1,"api_keys":20,"memories":-1,"connectors":20},
+    "pro":        {"messages_per_day":500,"documents":50,"max_file_mb":25,"agent_jobs":10,"websites":25,"code_runs_per_day":100,"api_keys":10,"memories":500,"connectors":8},
+    "premium":    {"messages_per_day":-1,"documents":100,"max_file_mb":50,"agent_jobs":20,"websites":100,"code_runs_per_day":-1,"api_keys":20,"memories":-1,"connectors":20},
     "enterprise": {"messages_per_day":-1,"documents":-1,"max_file_mb":200,"agent_jobs":-1,"websites":-1,"code_runs_per_day":-1,"api_keys":-1,"memories":-1,"connectors":-1},
 }
-PLAN_TIERS = ("free", "pro", "enterprise")
+PLAN_TIERS = ("free", "pro", "premium", "enterprise")
 RATE_LIMIT_RESOURCES = [
     ("messages_per_day", "Messages per day", "Chat, multi-model, voice, and agent message budget."),
     ("documents", "Documents", "Indexed documents a user can keep."),
@@ -450,6 +452,40 @@ async def db_executemany(sql: str, param_list: List[tuple]) -> None:
     await _conn().executemany(sql, param_list)
     await _conn().commit()
 
+async def _ensure_premium_subscription_tier() -> None:
+    row = await db_fetchone("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
+    ddl = (row or {}).get("sql") or ""
+    if "premium" in ddl:
+        return
+    logger.info("[MIGRATE] Rebuilding users table to allow premium subscriptions")
+    conn = _conn()
+    await conn.execute("PRAGMA foreign_keys=OFF")
+    await conn.executescript("""
+BEGIN;
+DROP TABLE IF EXISTS users_new;
+CREATE TABLE users_new (
+    id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL, full_name TEXT DEFAULT '',
+    role TEXT DEFAULT 'client' CHECK(role IN('admin','client')),
+    subscription TEXT DEFAULT 'free' CHECK(subscription IN('free','pro','premium','enterprise')),
+    subscription_expires_at TEXT, memory_enabled INTEGER DEFAULT 1,
+    timezone TEXT DEFAULT 'UTC', is_active INTEGER DEFAULT 1, is_verified INTEGER DEFAULT 0,
+    last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+INSERT INTO users_new(id,email,password_hash,full_name,role,subscription,subscription_expires_at,
+    memory_enabled,timezone,is_active,is_verified,last_login_at,created_at,updated_at)
+SELECT id,email,password_hash,full_name,role,subscription,subscription_expires_at,
+    memory_enabled,timezone,is_active,is_verified,last_login_at,created_at,updated_at
+FROM users;
+DROP TABLE users;
+ALTER TABLE users_new RENAME TO users;
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+COMMIT;
+""")
+    await conn.commit()
+    await conn.execute("PRAGMA foreign_keys=ON")
+    await conn.commit()
+
 async def _seed_default_ai_models(created_by: str) -> None:
     now = _utcnow()
     for mid, cfg in DEFAULT_DB_MODELS.items():
@@ -603,7 +639,7 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL, full_name TEXT DEFAULT '',
     role TEXT DEFAULT 'client' CHECK(role IN('admin','client')),
-    subscription TEXT DEFAULT 'free' CHECK(subscription IN('free','pro','enterprise')),
+    subscription TEXT DEFAULT 'free' CHECK(subscription IN('free','pro','premium','enterprise')),
     subscription_expires_at TEXT, memory_enabled INTEGER DEFAULT 1,
     timezone TEXT DEFAULT 'UTC', is_active INTEGER DEFAULT 1, is_verified INTEGER DEFAULT 0,
     last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -2791,6 +2827,7 @@ async def lifespan(app: FastAPI):
     await _init_db_connection()
     await _conn().executescript(_SCHEMA)
     await _conn().commit()
+    await _ensure_premium_subscription_tier()
     _init_chroma()
     await _seed_slash_commands()
     await _seed_platform_connectors()
@@ -5479,10 +5516,10 @@ class NotifCreate(BaseModel):
 
 class SubscriptionUpdate(BaseModel):
     user_id: str
-    tier: str = Field(..., pattern="^(free|pro|enterprise)$")
+    tier: str = Field(..., pattern="^(free|pro|premium|enterprise)$")
 
 class BillingOrderReq(BaseModel):
-    tier: str = Field(..., pattern="^(pro|enterprise)$")
+    tier: str = Field(..., pattern="^(pro|premium|enterprise)$")
 
 class RazorpayVerifyReq(BaseModel):
     razorpay_order_id: str = Field(..., min_length=5, max_length=80)
@@ -5491,7 +5528,7 @@ class RazorpayVerifyReq(BaseModel):
 
 class CouponCreate(BaseModel):
     code: Optional[str] = None
-    grants_tier: str = Field(..., pattern="^(free|pro|enterprise)$")
+    grants_tier: str = Field(..., pattern="^(free|pro|premium|enterprise)$")
     duration_days: int = 30
     max_uses: int = 1
     expires_days: Optional[int] = None
@@ -7560,7 +7597,11 @@ async def get_usage(user: Dict = Depends(_get_current_user)):
     }
 
 def _billing_plan_amount(tier: str) -> int:
-    return {"pro": RAZORPAY_PRO_MONTHLY, "enterprise": RAZORPAY_ENT_MONTHLY}.get(tier, 0)
+    return {
+        "pro": RAZORPAY_PRO_MONTHLY,
+        "premium": RAZORPAY_PREMIUM_MONTHLY,
+        "enterprise": RAZORPAY_ENT_MONTHLY,
+    }.get(tier, 0)
 
 def _billing_plan_rows(current: str = "free") -> List[Dict[str, Any]]:
     return [
@@ -7572,7 +7613,12 @@ def _billing_plan_rows(current: str = "free") -> List[Dict[str, Any]]:
         {
             "tier": "pro", "name": "Pro", "amount": _billing_plan_amount("pro"), "currency": RAZORPAY_CURRENCY,
             "display": f"{RAZORPAY_CURRENCY} {RAZORPAY_PRO_MONTHLY / 100:,.0f}/mo", "current": current == "pro",
-            "features": ["Higher usage limits", "RAG and workspace tools", "Priority model access"],
+            "features": ["More daily messages", "Larger uploads and documents", "Workspace tools"],
+        },
+        {
+            "tier": "premium", "name": "Premium", "amount": _billing_plan_amount("premium"), "currency": RAZORPAY_CURRENCY,
+            "display": f"{RAZORPAY_CURRENCY} {RAZORPAY_PREMIUM_MONTHLY / 100:,.0f}/mo", "current": current == "premium",
+            "features": ["Unlimited-style chat", "Priority model access", "Advanced files, RAG, and agents"],
         },
         {
             "tier": "enterprise", "name": "Enterprise", "amount": _billing_plan_amount("enterprise"), "currency": RAZORPAY_CURRENCY,
@@ -7828,6 +7874,7 @@ async def admin_stats(user: Dict = Depends(_require_admin)):
         "active":     await db_count("SELECT COUNT(*) as c FROM users WHERE is_active=1"),
         "free":       await db_count("SELECT COUNT(*) as c FROM users WHERE COALESCE(subscription,'free')='free'"),
         "pro":        await db_count("SELECT COUNT(*) as c FROM users WHERE subscription='pro'"),
+        "premium":    await db_count("SELECT COUNT(*) as c FROM users WHERE subscription='premium'"),
         "enterprise": await db_count("SELECT COUNT(*) as c FROM users WHERE subscription='enterprise'"),
     }
     content_stats = {
@@ -7844,6 +7891,7 @@ async def admin_stats(user: Dict = Depends(_require_admin)):
     tier_stats = {
         "free": user_stats["free"],
         "pro": user_stats["pro"],
+        "premium": user_stats["premium"],
         "enterprise": user_stats["enterprise"],
     }
     return {
