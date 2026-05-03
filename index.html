@@ -3176,6 +3176,37 @@ async function _sendChatInternal(msg, attachments = []) {
     renderQueuePanel(); _tryRunNextQueued();
   }
 
+  async function _tryDirectLatexCompile() {
+    const intent = detectGeneratedFileRequest(apiMsg);
+    if (!intent || !wantsLatexCompile(apiMsg) || !['pdf','tex'].includes(intent.file_type)) return false;
+    const latexSource = extractLatexSourceFromText(apiMsg);
+    if (!looksLikeLatexText(latexSource)) return false;
+    _onToolEvent({ type:'tool_start', tool:'latex', label: intent.file_type === 'tex' ? 'Preparing LaTeX source' : 'Compiling LaTeX to PDF' });
+    try {
+      const result = await post('/latex/compile', {
+        source: latexSource,
+        output: intent.file_type === 'tex' ? 'tex' : 'pdf',
+        filename: intent.filename || undefined
+      });
+      addFilesToLibrary([{ ...result, generated:true }]);
+      generatedFileQueued = true;
+      _onToolEvent({
+        type:'tool_result',
+        tool:'latex',
+        label: result.compiled === false ? 'LaTeX PDF ready (interpreted fallback)' : 'LaTeX PDF ready',
+        count: 1
+      });
+      full = result.compiled === false
+        ? `Done — I created a downloadable PDF from the LaTeX source. The server has no TeX engine installed, so I used the interpreted PDF fallback and placed it in the Files panel as ${result.original || 'a PDF'}.`
+        : `Done — I compiled the LaTeX and placed ${result.original || 'the PDF'} in the Files panel.`;
+      _onDone({ content: full, latency_ms: 0, tokens:{ input:0, output:0 } });
+      return true;
+    } catch(e) {
+      _onToolEvent({ type:'tool_error', tool:'latex', label: `LaTeX compile failed: ${errText(e.message || e)}` });
+      return false;
+    }
+  }
+
   async function _tryEventSource() {
     return new Promise(resolve => {
       const toolOptions = selectedToolOptions();
@@ -3234,6 +3265,7 @@ async function _sendChatInternal(msg, attachments = []) {
   }
 
   try {
+    if (await _tryDirectLatexCompile()) return;
     const preferPost = apiMsg.length > 1800 || !!imgData || localAttachments.length || S.agentMode;
     const esWorked = preferPost ? false : await _tryEventSource();
     if (!esWorked && !requestCompleted && !S.stopRequested) await _tryPostStream();
@@ -3364,7 +3396,7 @@ function dedupeFileRecords(files = []) {
 function detectGeneratedFileRequest(text = '') {
   const raw = String(text || '').trim();
   const s = raw.toLowerCase();
-  if (!/\b(generate|create|make|export|download|save|build|prepare)\b/.test(s)) return null;
+  if (!/\b(generate|create|make|export|download|save|build|prepare|convert|compile|compiler|render)\b/.test(s)) return null;
   if (!/\b(file|pdf|latex|tex|overleaf|compile|compiler|convert|excel|xlsx|spreadsheet|workbook|csv|text|txt|markdown|md|word|docx|doc|powerpoint|pptx|ppt|slides|presentation|html|webpage|json|zip|archive|document|report)\b/.test(s)) return null;
   let fileType = '';
   if (/\b(latex|tex|overleaf)\b/.test(s) && /\b(pdf|compile|compiler|convert|render)\b/.test(s)) fileType = 'pdf';
@@ -3396,6 +3428,10 @@ function extractLatexSourceFromText(text = '') {
 }
 function looksLikeLatexText(text = '') {
   return /\\(?:documentclass|begin\{document\}|usepackage|section\{|subsection\{|title\{|begin\{(?:equation|align|tabular|figure|itemize|enumerate))/.test(extractLatexSourceFromText(text));
+}
+function wantsLatexCompile(text = '') {
+  const s = String(text || '').toLowerCase();
+  return looksLikeLatexText(text) && /\b(convert|compile|compiler|render|export|download|save|generate|create|make)\b/.test(s) && /\b(pdf|latex|tex|overleaf)\b/.test(s);
 }
 async function maybeGenerateFileFromResponse(userPrompt, assistantText) {
   const intent = detectGeneratedFileRequest(userPrompt);
