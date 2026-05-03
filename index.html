@@ -1406,8 +1406,13 @@ async function loadModels({ preserveSelection = true } = {}) {
       const s = `${m.id || ''} ${m.label || m.name || ''}`.toLowerCase();
       return !(s.includes('uncensored') || s.includes('dolphin'));
     };
+    const isInternalModel = m => {
+      const tags = (m.tags || []).map(t => String(t).toLowerCase());
+      const s = `${m.id || ''} ${m.label || m.name || ''} ${m.description || ''}`.toLowerCase();
+      return tags.includes('internal') || tags.includes('hidden') || tags.includes('image-to-text') || s.includes('image-to-text');
+    };
     (d.builtin_models || []).forEach(m => all.push(decorateModel({ id:m.id, label:m.label, ctx:m.ctx||32768, censored:inferCensored(m), tags:[m.provider, m.protected?'protected':''].filter(Boolean) })));
-    (d.db_models || []).forEach(m => all.push(decorateModel({ id:m.id, label:m.name||m.id, ctx:m.context_length||m.ctx||4096, censored:inferCensored(m), tags:[m.provider, ...(m.tags||[])].filter(Boolean), cost_per_million_tokens:m.cost_per_million_tokens })));
+    (d.db_models || []).forEach(m => { if (!isInternalModel(m)) all.push(decorateModel({ id:m.id, label:m.name||m.id, ctx:m.context_length||m.ctx||4096, censored:inferCensored(m), tags:[m.provider, ...(m.tags||[])].filter(Boolean), cost_per_million_tokens:m.cost_per_million_tokens })); });
     const seen = new Set();
     const deduped = all
       .filter(m => !seen.has(m.id) && seen.add(m.id))
