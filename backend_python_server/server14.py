@@ -372,6 +372,21 @@ _PROVIDER_DEFAULTS: Dict[str,str] = {
     "custom":      "",
 }
 
+NVIDIA_KIMI_PROVIDER_FALLBACKS = {
+    "moonshotai/kimi-k2.6": [
+        "moonshotai/kimi-k2.6",
+        "moonshotai/kimi-k2-thinking",
+        "moonshotai/kimi-k2-instruct",
+        "moonshotai/kimi-k2-instruct-0905",
+    ],
+}
+NVIDIA_STREAM_TIMEOUTS = {
+    "moonshotai/kimi-k2.6": int(os.getenv("NVIDIA_KIMI_K26_TIMEOUT", "10")),
+    "moonshotai/kimi-k2-thinking": int(os.getenv("NVIDIA_KIMI_THINKING_TIMEOUT", "14")),
+    "moonshotai/kimi-k2-instruct": int(os.getenv("NVIDIA_KIMI_INSTRUCT_TIMEOUT", "30")),
+    "moonshotai/kimi-k2-instruct-0905": int(os.getenv("NVIDIA_KIMI_INSTRUCT_0905_TIMEOUT", "30")),
+}
+
 # â”€â”€ Style hints for website builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _STYLE_HINTS = {
     "modern":        "Clean, bold typography, whitespace, subtle shadows, CSS Grid",
@@ -1444,6 +1459,15 @@ async def _auto_route_model(preferred_model_id: str, message: str,
 async def _llm_text_once(messages: List[Dict], model_id: str,
                          max_tokens: int = 1024,
                          temperature: float = 0.7) -> Tuple[str, str, str]:
+    nvidia_meta = await _nvidia_stream_model_meta(model_id)
+    if nvidia_meta:
+        chunks: List[str] = []
+        provider_model = nvidia_meta["model_name"]
+        async for kind, payload, meta in _stream_nvidia_text_once(messages, model_id, max_tokens, temperature):
+            if kind == "delta":
+                chunks.append(payload)
+                provider_model = meta.get("provider_model") or provider_model
+        return "".join(chunks), _canonical_model_id(model_id), provider_model
     client, model_name = await _get_model_client(model_id)
     extra_body = await _chat_completion_extra_body(model_id)
     resp = await asyncio.get_running_loop().run_in_executor(
@@ -1641,6 +1665,18 @@ async def _nvidia_stream_model_meta(model_id: str) -> Optional[Dict[str, Any]]:
         "temperature": float(row.get("temperature_default") or 0.7),
     }
 
+def _nvidia_provider_model_attempts(model_name: str) -> List[str]:
+    model = str(model_name or "").strip()
+    attempts = NVIDIA_KIMI_PROVIDER_FALLBACKS.get(model, [model])
+    seen: Set[str] = set()
+    return [m for m in attempts if m and not (m in seen or seen.add(m))]
+
+def _nvidia_stream_timeout(provider_model: str) -> int:
+    return max(8, int(NVIDIA_STREAM_TIMEOUTS.get(provider_model, 45)))
+
+def _nvidia_enable_thinking(provider_model: str) -> bool:
+    return provider_model in {"moonshotai/kimi-k2.6", "moonshotai/kimi-k2-thinking"}
+
 async def _stream_nvidia_text_once(messages: List[Dict], model_id: str,
                                    max_tokens: int = 1024,
                                    temperature: float = 0.7):
@@ -1653,59 +1689,78 @@ async def _stream_nvidia_text_once(messages: List[Dict], model_id: str,
     effective_temperature = float(temperature if temperature is not None else meta["temperature"])
 
     def _run_stream():
-        try:
-            payload = {
-                "model": meta["model_name"],
-                "messages": messages,
-                "max_tokens": effective_max_tokens,
-                "temperature": effective_temperature,
-                "top_p": 1.0,
-                "stream": True,
-            }
-            if meta["model_name"] == "moonshotai/kimi-k2.6":
-                payload["chat_template_kwargs"] = {"thinking": True}
-            req = urllib.request.Request(
-                meta["base_url"] + "/chat/completions",
-                data=json.dumps(payload).encode("utf-8"),
-                method="POST",
-                headers={
-                    "Authorization": "Bearer " + meta["api_key"],
-                    "Accept": "text/event-stream",
-                    "Content-Type": "application/json",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=45) as resp:
-                for raw in resp:
-                    line = raw.decode("utf-8", "replace").strip()
-                    if not line:
-                        continue
-                    if line.startswith("data:"):
-                        line = line[5:].strip()
-                    if not line or line == "[DONE]":
-                        continue
-                    try:
-                        data = json.loads(line)
-                    except Exception:
-                        continue
-                    choices = data.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
-                    reasoning = delta.get("reasoning_content") or delta.get("thinking") or ""
-                    content = delta.get("content") or ""
-                    if reasoning:
-                        loop.call_soon_threadsafe(queue.put_nowait, ("thinking", reasoning))
-                    if content:
-                        loop.call_soon_threadsafe(queue.put_nowait, ("delta", content))
-            loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
-        except Exception as exc:
-            loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
+        last_error: Optional[Exception] = None
+        attempts = _nvidia_provider_model_attempts(meta["model_name"])
+        for idx, provider_model in enumerate(attempts):
+            attempt_meta = {**meta, "provider_model": provider_model}
+            if idx > 0:
+                label = f"{meta['label']} is slow on NVIDIA. Trying {provider_model}..."
+                loop.call_soon_threadsafe(queue.put_nowait, ("status", label, attempt_meta))
+            try:
+                logger.info("[LLM] NVIDIA stream attempt %s via %s", meta["model_id"], provider_model)
+                timeout_seconds = _nvidia_stream_timeout(provider_model)
+                payload = {
+                    "model": provider_model,
+                    "messages": messages,
+                    "max_tokens": effective_max_tokens,
+                    "temperature": effective_temperature,
+                    "top_p": 1.0,
+                    "stream": True,
+                }
+                if _nvidia_enable_thinking(provider_model):
+                    payload["chat_template_kwargs"] = {"thinking": True}
+                req = urllib.request.Request(
+                    meta["base_url"] + "/chat/completions",
+                    data=json.dumps(payload).encode("utf-8"),
+                    method="POST",
+                    headers={
+                        "Authorization": "Bearer " + meta["api_key"],
+                        "Accept": "text/event-stream",
+                        "Content-Type": "application/json",
+                    },
+                )
+                with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+                    for raw in resp:
+                        line = raw.decode("utf-8", "replace").strip()
+                        if not line:
+                            continue
+                        if line.startswith("data:"):
+                            line = line[5:].strip()
+                        if not line or line == "[DONE]":
+                            continue
+                        try:
+                            data = json.loads(line)
+                        except Exception:
+                            continue
+                        choices = data.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta") or {}
+                        reasoning = delta.get("reasoning_content") or delta.get("thinking") or ""
+                        content = delta.get("content") or ""
+                        if reasoning:
+                            loop.call_soon_threadsafe(queue.put_nowait, ("thinking", reasoning, attempt_meta))
+                        if content:
+                            loop.call_soon_threadsafe(queue.put_nowait, ("delta", content, attempt_meta))
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", None, attempt_meta))
+                return
+            except Exception as exc:
+                last_error = exc
+                logger.warning("[LLM] NVIDIA provider model %s failed for %s: %s",
+                               provider_model, meta["model_id"], exc)
+                continue
+        if last_error:
+            loop.call_soon_threadsafe(queue.put_nowait, ("error", last_error, meta))
+        else:
+            loop.call_soon_threadsafe(queue.put_nowait, ("error", RuntimeError("No NVIDIA provider models configured"), meta))
 
     loop.run_in_executor(_executor, _run_stream)
     while True:
-        kind, payload = await queue.get()
-        if kind in ("delta", "thinking"):
-            yield kind, payload, meta
+        item = await queue.get()
+        kind, payload = item[0], item[1]
+        item_meta = item[2] if len(item) > 2 else meta
+        if kind in ("delta", "thinking", "status"):
+            yield kind, payload, item_meta
         elif kind == "error":
             raise payload
         else:
@@ -6048,7 +6103,11 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
                 thinking_content = ""
                 try:
                     async for kind, payload, meta in _stream_nvidia_text_once(messages, active_model_id, max_tokens=2048, temperature=0.7):
-                        if kind == "thinking":
+                        if kind == "status":
+                            status_ev = {"type":"tool_progress","tool":"model","label":payload}
+                            tool_log.append(status_ev)
+                            yield f"data: {json.dumps(status_ev)}\n\n"
+                        elif kind == "thinking":
                             thinking_content += payload
                             yield f"data: {json.dumps({'type':'thinking_content','content':thinking_content[-12000:]})}\n\n"
                         else:
