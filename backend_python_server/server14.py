@@ -223,6 +223,7 @@ _RUNTIME_ENV_KEYS = [
     "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY",
     "REQUIRE_EMAIL_VERIFICATION", "EMAIL_VERIFICATION_EXPIRE_HOURS",
     "EMAIL_VERIFICATION_RETURN_LINK",
+    "PASSWORD_RESET_EXPIRE_MINUTES", "PASSWORD_RESET_RETURN_LINK",
 ]
 _RUNTIME_ENV_DEFAULTS = {
     "ADMIN_EMAIL": "jasmeet.15069@gmail.com",
@@ -233,6 +234,8 @@ _RUNTIME_ENV_DEFAULTS = {
     "REQUIRE_EMAIL_VERIFICATION": "1",
     "EMAIL_VERIFICATION_EXPIRE_HOURS": "24",
     "EMAIL_VERIFICATION_RETURN_LINK": "1",
+    "PASSWORD_RESET_EXPIRE_MINUTES": "30",
+    "PASSWORD_RESET_RETURN_LINK": "1",
 }
 
 def _env_file_path() -> Path:
@@ -662,6 +665,12 @@ CREATE TABLE IF NOT EXISTS email_verification_tokens (
     created_at TEXT NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT DEFAULT 'New Chat',
     model_id TEXT DEFAULT 'llama-3.3-70b-versatile', is_pinned INTEGER DEFAULT 0,
@@ -1030,6 +1039,8 @@ CREATE INDEX IF NOT EXISTS idx_code_logs_user     ON code_run_logs(user_id,creat
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens     ON refresh_tokens(token_hash,revoked);
 CREATE INDEX IF NOT EXISTS idx_email_ver_hash     ON email_verification_tokens(token_hash,used_at);
 CREATE INDEX IF NOT EXISTS idx_email_ver_user     ON email_verification_tokens(user_id,used_at);
+CREATE INDEX IF NOT EXISTS idx_pw_reset_hash      ON password_reset_tokens(token_hash,used_at);
+CREATE INDEX IF NOT EXISTS idx_pw_reset_user      ON password_reset_tokens(user_id,used_at);
 CREATE INDEX IF NOT EXISTS idx_ai_models_active   ON ai_models(is_active,is_default);
 CREATE INDEX IF NOT EXISTS idx_oauth_states       ON oauth_states(state, expires_at);
 CREATE INDEX IF NOT EXISTS idx_smart_conn_user    ON smart_connectors(user_id, status);
@@ -1116,6 +1127,13 @@ def _email_verification_return_link() -> bool:
 def _email_verification_expiry_hours() -> int:
     return _env_int("EMAIL_VERIFICATION_EXPIRE_HOURS", 24, 1, 168)
 
+def _password_reset_expiry_minutes() -> int:
+    return _env_int("PASSWORD_RESET_EXPIRE_MINUTES", 30, 5, 1440)
+
+def _password_reset_return_link() -> bool:
+    # Like verification links, keep the self-hosted install usable without SMTP.
+    return _env_bool("PASSWORD_RESET_RETURN_LINK", True)
+
 def _supabase_public_config() -> Dict[str, Any]:
     url = os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL") or ""
     key = os.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY") or ""
@@ -1123,6 +1141,8 @@ def _supabase_public_config() -> Dict[str, Any]:
         "enabled": bool(url.strip() and key.strip()),
         "url": url.strip(),
         "publishable_key": key.strip(),
+        "scope": "email_verification_only",
+        "auth_mode": "jazz_jwt",
     }
 
 def _normalize_email(email: str) -> str:
@@ -1184,6 +1204,62 @@ def _verification_response(email: str, link: str) -> Dict[str, Any]:
     if _email_verification_return_link():
         resp["verification_link"] = link
     return resp
+
+async def _create_password_reset_link(user_id: str, email: str, request: Optional[Request] = None) -> str:
+    raw = f"jpr_{secrets.token_urlsafe(32)}"
+    now = _utcnow()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=_password_reset_expiry_minutes())).isoformat()
+    await db_execute(
+        "UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL",
+        (now, user_id),
+    )
+    await db_execute(
+        "INSERT INTO password_reset_tokens(id,user_id,token_hash,email,expires_at,created_at)"
+        " VALUES(?,?,?,?,?,?)",
+        (_new_id(), user_id, _hash_token(raw), email, expires_at, now),
+    )
+    return f"{_app_base_url(request)}/?reset_token={urllib.parse.quote(raw)}"
+
+def _password_reset_response(email: str, link: str = "") -> Dict[str, Any]:
+    resp: Dict[str, Any] = {
+        "ok": True,
+        "message": "If that account exists, a reset link has been created.",
+    }
+    if link and _password_reset_return_link():
+        resp["reset_link"] = link
+        resp["email"] = email
+    return resp
+
+async def _reset_password_by_token(raw_token: str, new_password: str) -> str:
+    _validated_password(new_password)
+    token = str(raw_token or "").strip()
+    if not token:
+        raise HTTPException(400, "Missing reset token")
+    row = await db_fetchone(
+        "SELECT * FROM password_reset_tokens WHERE token_hash=? AND used_at IS NULL",
+        (_hash_token(token),),
+    )
+    if not row:
+        raise HTTPException(400, "Reset link is invalid or already used")
+    try:
+        expires_at = datetime.fromisoformat(row["expires_at"])
+    except Exception:
+        expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(400, "Reset link has expired. Please request a new one.")
+    now = _utcnow()
+    await db_execute(
+        "UPDATE users SET password_hash=?,is_verified=1,updated_at=? WHERE id=?",
+        (_hash_pw(new_password), now, row["user_id"]),
+    )
+    await db_execute("UPDATE refresh_tokens SET revoked=1 WHERE user_id=? AND revoked=0", (row["user_id"],))
+    await db_execute("UPDATE password_reset_tokens SET used_at=? WHERE id=?", (now, row["id"]))
+    await db_execute(
+        "INSERT INTO audit_log(id,actor_id,target_id,action,detail_json,created_at) VALUES(?,?,?,?,?,?)",
+        (_new_id(), row["user_id"], row["user_id"], "password_reset_link_used",
+         json.dumps({"email": row["email"]}), now),
+    )
+    return row["email"]
 
 async def _verify_email_token(raw_token: str) -> Tuple[bool, str]:
     token = str(raw_token or "").strip()
@@ -5439,6 +5515,10 @@ class AuthIn(BaseModel):
 class EmailOnlyIn(BaseModel):
     email: str
 
+class PasswordResetIn(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8)
+
 class RefreshIn(BaseModel):
     refresh_token: str
 
@@ -5817,6 +5897,29 @@ async def auth_resend_verification(request: Request, body: EmailOnlyIn):
     link = await _create_email_verification_link(user["id"], email, request)
     logger.info("[AUTH] Verification link for %s: %s", email, link)
     return _verification_response(email, link)
+
+@app.post("/auth/forgot-password")
+async def auth_forgot_password(request: Request, body: EmailOnlyIn):
+    email = _validated_email(body.email)
+    user = await db_fetchone("SELECT id,email,is_active FROM users WHERE email=?", (email,))
+    if not user or not int(user.get("is_active") or 0):
+        return _password_reset_response(email)
+    link = await _create_password_reset_link(user["id"], email, request)
+    logger.info("[AUTH] Password reset link for %s: %s", email, link)
+    return _password_reset_response(email, link)
+
+@app.get("/auth/reset-password")
+async def auth_reset_password_page(token: str = ""):
+    if not token:
+        return _auth_html_page("Reset password", "Open the reset link from your email, or request a new one from the sign-in screen.", True)
+    link = f"/?reset_token={urllib.parse.quote(token)}"
+    html = f"""<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url={html_lib.escape(link)}"><title>Reset password</title></head><body><a href="{html_lib.escape(link)}">Continue to reset password</a></body></html>"""
+    return HTMLResponse(html)
+
+@app.post("/auth/reset-password")
+async def auth_reset_password(body: PasswordResetIn):
+    email = await _reset_password_by_token(body.token, body.new_password)
+    return {"ok": True, "email": email, "message": "Password reset. Sign in with your new password."}
 
 @app.get("/auth/verify-email")
 async def auth_verify_email(token: str = ""):

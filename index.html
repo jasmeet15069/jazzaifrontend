@@ -807,6 +807,7 @@ try {
       <button id="auth-submit" class="btn btn-primary" style="width:100%;font-size:14px;padding:12px;justify-content:center;border-radius:10px" onclick="doAuth()">
         <span id="auth-btn-text">Sign In</span>
       </button>
+      <button id="auth-forgot-btn" class="btn btn-ghost" style="width:100%;font-size:12px;padding:9px;justify-content:center;border-radius:10px;margin-top:8px" onclick="forgotPassword()">Forgot password?</button>
       <button id="auth-resend-btn" class="btn" style="display:none;width:100%;font-size:13px;padding:10px;justify-content:center;border-radius:10px;margin-top:10px" onclick="resendVerification()">Resend verification link</button>
     </div>
     <p style="text-align:center;font-size:11px;color:#252540;margin-top:20px">JAZZ AI v14 · Enterprise Production</p>
@@ -908,7 +909,8 @@ try {
 const DEFAULT_API_BASE = 'https://imperceptibly-hymnlike-leesa.ngrok-free.dev';
 const SUPABASE_PUBLIC = Object.freeze({
   url: 'https://nirnrxiuguoqwyuvulie.supabase.co',
-  publishableKey: 'sb_publishable_CC92GWIHtyljAxYXIvpmLg_4ZsBtEGB'
+  publishableKey: 'sb_publishable_CC92GWIHtyljAxYXIvpmLg_4ZsBtEGB',
+  scope: 'email_verification_only'
 });
 let API = (localStorage.getItem('jazz_api') || DEFAULT_API_BASE || window.location.origin).replace(/\/+$/, '');
 let WS_URL = API.replace('https://', 'wss://').replace('http://', 'ws://');
@@ -1397,6 +1399,7 @@ function switchAuthTab(m) {
   document.getElementById('auth-password').autocomplete = m === 'signup' ? 'new-password' : 'current-password';
   document.getElementById('auth-password-hint').style.display = m === 'signup' ? 'block' : 'none';
   document.getElementById('auth-resend-btn').style.display = 'none';
+  document.getElementById('auth-forgot-btn').style.display = m === 'login' ? 'flex' : 'none';
   clearAuthMessages();
 }
 function validateAuthInputs() {
@@ -1425,6 +1428,68 @@ async function resendVerification() {
   } finally {
     setAuthLoading(false);
   }
+}
+async function forgotPassword() {
+  const email = document.getElementById('auth-email').value.trim().toLowerCase();
+  if (!AUTH_EMAIL_RE.test(email)) { setAuthError('Enter your email first'); return; }
+  setAuthLoading(true);
+  try {
+    await resolveApiBase();
+    const d = await post('/auth/forgot-password', { email });
+    setAuthSuccess(d.message || 'If that account exists, a reset link has been created.', d.reset_link);
+  } catch(e) {
+    setAuthError(e.message);
+  } finally {
+    setAuthLoading(false);
+  }
+}
+function checkResetPasswordRoute() {
+  try {
+    const qs = new URLSearchParams(window.location.search || '');
+    const token = qs.get('reset_token') || qs.get('password_reset_token');
+    if (!token) return;
+    window.history.replaceState({}, document.title, window.location.pathname || '/');
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-page').style.display = 'flex';
+    switchAuthTab('login');
+    openResetPasswordModal(token);
+  } catch(e) {}
+}
+function openResetPasswordModal(token) {
+  openModal(`<div class="modal" style="width:min(440px,calc(100vw - 24px))">
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+      <div style="width:42px;height:42px;border-radius:12px;border:1px solid #7c6ff7;display:grid;place-items:center;color:#8b7cf6">↺</div>
+      <div>
+        <h2 style="margin:0;font-size:22px">Reset Password</h2>
+        <div style="font-size:12px;color:#9090b0">Choose a new password for this account.</div>
+      </div>
+    </div>
+    <div style="display:grid;gap:12px">
+      <input class="input" id="reset-token" type="hidden" value="${escAttr(token)}">
+      <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">New Password</label><input class="input" id="reset-new" type="password" autocomplete="new-password" maxlength="128"></div>
+      <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Confirm Password</label><input class="input" id="reset-confirm" type="password" autocomplete="new-password" maxlength="128"></div>
+      <div style="font-size:12px;color:#70709a">Use 8+ chars with uppercase, lowercase, number, and symbol.</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitResetPassword()">Update Password</button>
+      </div>
+    </div>
+  </div>`);
+}
+async function submitResetPassword() {
+  const token = document.getElementById('reset-token')?.value || '';
+  const nw = document.getElementById('reset-new')?.value || '';
+  const con = document.getElementById('reset-confirm')?.value || '';
+  if (nw !== con) { toast('Passwords do not match','err'); return; }
+  const issues = authPasswordIssues(nw);
+  if (issues.length) { toast('Password needs: ' + issues.join(', '), 'err'); return; }
+  try {
+    const d = await post('/auth/reset-password', { token, new_password: nw });
+    closeModal();
+    setAuthSuccess(d.message || 'Password reset. Sign in with your new password.');
+    toast('Password reset', 'ok');
+  } catch(e) { toast(e.message, 'err'); }
 }
 async function doAuth() {
   clearAuthMessages();
@@ -5412,9 +5477,10 @@ function settingsTab(tab, el) {
     usage: `<div id="usage-body" style="max-width:480px"></div>`,
     security: `<div class="card" style="max-width:480px;display:grid;gap:12px">
       <div style="font-size:14px;font-weight:700">Change Password</div>
-      <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Current Password</label><input class="input" id="pw-cur" type="password"></div>
-      <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">New Password</label><input class="input" id="pw-new" type="password"></div>
-      <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Confirm New Password</label><input class="input" id="pw-con" type="password"></div>
+      <div style="font-size:12px;color:#70709a">Use your current password here, or use the forgot-password link from sign in if you are locked out.</div>
+      <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Current Password</label><input class="input" id="pw-cur" type="password" autocomplete="current-password"></div>
+      <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">New Password</label><input class="input" id="pw-new" type="password" autocomplete="new-password" maxlength="128"></div>
+      <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Confirm New Password</label><input class="input" id="pw-con" type="password" autocomplete="new-password" maxlength="128"></div>
       <button class="btn btn-primary" onclick="changePassword()" style="justify-content:center">Update Password</button>
       <div style="border-top:1px solid #1a1a30;padding-top:12px">
         <div style="font-size:13px;color:#9090b0;margin-bottom:6px">API Base URL (self-hosted)</div>
@@ -5538,7 +5604,9 @@ async function deleteArchivedChat(id) {
 }
 async function changePassword() {
   const cur = document.getElementById('pw-cur').value, nw = document.getElementById('pw-new').value, con = document.getElementById('pw-con').value;
-  if (nw !== con) { toast('Passwords do not match','err'); return; } if (nw.length < 8) { toast('Min 8 chars','err'); return; }
+  if (nw !== con) { toast('Passwords do not match','err'); return; }
+  const issues = authPasswordIssues(nw);
+  if (issues.length) { toast('Password needs: ' + issues.join(', '), 'err'); return; }
   try { await post('/auth/change-password', { current_password:cur, new_password:nw }); toast('Password updated','ok'); } catch(e) { toast(e.message,'err'); }
 }
 async function saveApiUrl() {
@@ -7191,6 +7259,7 @@ loadSaved();
 (async () => {
   await resolveApiBase();
   await loadPlatformStatus();
+  checkResetPasswordRoute();
   if (S.token && S.user) {
     get('/auth/me').then(u => { S.user = u; save(); showApp(); }).catch(() => doLogout());
   } else {
