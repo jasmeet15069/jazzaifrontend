@@ -445,6 +445,11 @@ _STYLE_HINTS = {
     "brutalist":     "Raw feel, bold borders, high contrast, asymmetric layout",
     "dark":          "Dark background, glowing accents, modern dark UI patterns",
     "futuristic":    "Sci-fi aesthetic, neon glows, animated particles, holographic effects",
+    "saas":          "Quiet SaaS product UI, dense sections, crisp feature grids, practical dashboards",
+    "editorial":     "Premium magazine feel, immersive type scale, strong content rhythm",
+    "commerce":      "Conversion-focused product storytelling, trust blocks, polished checkout cues",
+    "app":           "Interactive app shell with realistic panels, controls, empty/loading states",
+    "agency":        "Sharp creative studio style, case studies, bold service positioning",
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -6017,29 +6022,81 @@ async def _push_notification(user_id: Optional[str], title: str, message: str,
 # §17  WEBSITE BUILDER
 # ══════════════════════════════════════════════════════════════════════════════
 
-_WEB_SYSTEM = """You are an elite frontend developer. Generate a COMPLETE, SELF-CONTAINED single-file HTML website.
-All CSS in <style>. All JS in <script>. CDN from Google Fonts / cdnjs.cloudflare.com only.
-Fully functional, visually stunning, fully responsive. No Lorem Ipsum. Return ONLY raw HTML — no markdown fences."""
+_WEB_SYSTEM = """You are an elite product designer and senior frontend engineer. Generate a COMPLETE, SELF-CONTAINED single-file HTML website or web app prototype.
+All CSS must live in one <style> tag. All JavaScript must live in one <script> tag. Use semantic HTML, accessible controls, responsive CSS Grid/Flexbox, polished mobile layouts, and realistic production copy.
+Fully functional, visually stunning, fully responsive. No Lorem Ipsum. Return ONLY raw HTML - no markdown fences."""
+
+def _clean_generated_html(result: str, title: str = "Website") -> str:
+    html = re.sub(r"^```(?:html)?\s*", "", (result or "").strip(), flags=re.IGNORECASE)
+    html = re.sub(r"```\s*$", "", html.strip()).strip()
+    if "<html" not in html.lower():
+        safe_title = html_lib.escape(title or "Website")
+        html = f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{safe_title}</title></head><body>{html}</body></html>"
+    if "<meta name=\"viewport\"" not in html.lower():
+        html = re.sub(r"(<head[^>]*>)", r"\1<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">", html, count=1, flags=re.IGNORECASE)
+    return html
+
+def _website_quality_spec(req: Dict[str, Any]) -> str:
+    features = ", ".join([str(x).strip() for x in req.get("features", []) if str(x).strip()][:12])
+    sections = ", ".join([str(x).strip() for x in req.get("pages", []) if str(x).strip()][:12])
+    return (
+        f"Site type: {req.get('site_type') or 'choose the best fit'}\n"
+        f"Audience: {req.get('audience') or 'target users for the brief'}\n"
+        f"Sections/pages: {sections or 'choose the best sections for the brief'}\n"
+        f"Requested features: {features or 'add useful interactions appropriate to the site'}\n"
+        f"Theme mode: {req.get('theme_mode') or 'auto'}\n"
+        f"Interactivity level: {req.get('interactivity') or 'rich'}\n"
+        f"SEO keywords: {req.get('seo_keywords') or 'derive from brief'}\n"
+        f"Palette: {req.get('color_palette') or 'domain-appropriate, not one-note'}\n"
+    )
 
 async def _build_website(description: str, title: str, style: str, model_id: str,
                          pages: Optional[List[str]] = None,
                          color_palette: str = "",
-                         extra_instructions: str = "") -> str:
+                         extra_instructions: str = "",
+                         site_type: str = "",
+                         audience: str = "",
+                         features: Optional[List[str]] = None,
+                         theme_mode: str = "auto",
+                         interactivity: str = "rich",
+                         seo_keywords: str = "") -> str:
     hint = _STYLE_HINTS.get(style, _STYLE_HINTS["modern"])
-    page_text = ", ".join([p.strip() for p in (pages or []) if p and p.strip()][:8])
+    policies = await _prompt_policies()
+    admin_guidance = str(policies.get("website_builder_instructions") or "").strip()
+    quality = _website_quality_spec({
+        "pages": pages or [], "color_palette": color_palette, "site_type": site_type,
+        "audience": audience, "features": features or [], "theme_mode": theme_mode,
+        "interactivity": interactivity, "seo_keywords": seo_keywords,
+    })
     prompt = (
         f"Build a complete website.\nTitle: {title}\nDescription: {description}\n"
-        f"Style: {style} — {hint}\n"
-        f"Suggested pages/sections: {page_text or 'choose the best sections for this brief'}\n"
-        f"Color palette: {color_palette or 'choose a polished domain-appropriate palette'}\n"
+        f"Style: {style} - {hint}\n"
+        f"{quality}"
         f"Extra instructions: {extra_instructions or 'none'}\n"
+        f"Admin builder guidance: {admin_guidance or 'none'}\n"
+        "Quality bar: make it feel closer to a Lovable/Emergent-style generated app: complete, coherent, interactive, mobile-perfect, visually specific, with real content and no placeholder sections.\n"
         "Return ONLY raw HTML."
     )
     result = await _llm_text(
         [{"role":"system","content":_WEB_SYSTEM},{"role":"user","content":prompt}],
-        model_id=model_id, max_tokens=4096, temperature=0.8)
-    html = re.sub(r"^```html\s*","",result.strip(),flags=re.IGNORECASE)
-    return re.sub(r"```\s*$","",html.strip()).strip()
+        model_id=model_id, max_tokens=8192, temperature=0.72)
+    return _clean_generated_html(result, title)
+
+async def _iterate_website(existing_html: str, change_request: str, title: str,
+                           model_id: str, preserve_brand: bool = True) -> str:
+    prompt = (
+        "Revise this existing single-file website. Return the full updated HTML file, not a diff.\n"
+        f"Title: {title}\n"
+        f"Change request: {change_request}\n"
+        f"Preserve brand/content unless explicitly changed: {'yes' if preserve_brand else 'no'}\n"
+        "Keep it self-contained, responsive, accessible, and interactive. Do not remove working sections unless asked.\n\n"
+        "CURRENT HTML:\n"
+        f"{existing_html[:180000]}"
+    )
+    result = await _llm_text(
+        [{"role":"system","content":_WEB_SYSTEM},{"role":"user","content":prompt}],
+        model_id=model_id, max_tokens=8192, temperature=0.55)
+    return _clean_generated_html(result, title)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # §18  MCP SERVER ENGINE
@@ -6323,6 +6380,23 @@ class WebsiteCreate(BaseModel):
     pages: Optional[List[str]] = None
     color_palette: Optional[str] = None
     extra_instructions: Optional[str] = None
+    site_type: str = "landing"
+    audience: str = ""
+    features: List[str] = Field(default_factory=list)
+    theme_mode: str = "auto"
+    interactivity: str = "rich"
+    seo_keywords: str = ""
+
+    @field_validator("pages", "features", mode="before")
+    @classmethod
+    def _website_lists(cls, value):
+        return _coerce_str_list(value)
+
+class WebsiteIterateReq(BaseModel):
+    change_request: str = Field(..., min_length=3, max_length=20000)
+    model_id: str = "llama-3.3-70b-versatile"
+    save_as_new: bool = False
+    preserve_brand: bool = True
 
 class CodeRunReq(BaseModel):
     code: str = Field(..., min_length=1)
@@ -8341,18 +8415,23 @@ async def build_website_ep(req: WebsiteCreate, user: Dict = Depends(_get_current
     await _check_rate_limit(user, "websites")
     html = await _build_website(
         req.description, req.title, req.style, req.model_id,
-        req.pages, req.color_palette or "", req.extra_instructions or "")
+        req.pages, req.color_palette or "", req.extra_instructions or "",
+        req.site_type or "", req.audience or "", req.features or [],
+        req.theme_mode or "auto", req.interactivity or "rich", req.seo_keywords or "")
     wid = _new_id(); now = _utcnow(); fname = f"{wid}.html"
     fpath = SITES_DIR / fname; fpath.write_text(html, encoding="utf-8")
     prompt_used = json.dumps({
         "description": req.description, "pages": req.pages or [],
         "color_palette": req.color_palette or "", "extra_instructions": req.extra_instructions or "",
+        "site_type": req.site_type or "", "audience": req.audience or "",
+        "features": req.features or [], "theme_mode": req.theme_mode or "auto",
+        "interactivity": req.interactivity or "rich", "seo_keywords": req.seo_keywords or "",
     })
     await db_execute(
         "INSERT INTO websites(id,user_id,title,description,filename,style,prompt_used,html_size_bytes,created_at,updated_at)"
         " VALUES(?,?,?,?,?,?,?,?,?,?)",
         (wid, uid, req.title, req.description, fname, req.style, prompt_used, len(html.encode()), now, now))
-    return {"id":wid,"title":req.title,"preview_url":f"/preview/{fname}"}
+    return {"id":wid,"title":req.title,"preview_url":f"/preview/{fname}","html_size_bytes":len(html.encode())}
 
 @app.post("/websites/generate")  # legacy alias
 async def generate_website(body: dict, user: Dict = Depends(_get_current_user)):
@@ -8366,9 +8445,12 @@ async def generate_website(body: dict, user: Dict = Depends(_get_current_user)):
 async def list_websites(user: Dict = Depends(_get_current_user)):
     uid = user.get("id") or user.get("sub","")
     sites = await db_fetchall(
-        "SELECT id,title,description,filename,style,html_size_bytes,view_count,created_at"
+        "SELECT id,title,description,filename,style,prompt_used,html_size_bytes,view_count,created_at,updated_at"
         " FROM websites WHERE user_id=? ORDER BY created_at DESC", (uid,))
-    for r in sites: r["preview_url"] = f"/preview/{r['filename']}"
+    for r in sites:
+        r["preview_url"] = f"/preview/{r['filename']}"
+        try: r["prompt"] = json.loads(r.get("prompt_used") or "{}")
+        except Exception: r["prompt"] = {}
     return {"websites":sites}
 
 @app.get("/websites/{wid}")
@@ -8403,6 +8485,42 @@ async def update_website(wid: str, body: dict, user: Dict = Depends(_get_current
         "UPDATE websites SET title=?,description=?,style=?,html_size_bytes=?,updated_at=? WHERE id=? AND user_id=?",
         (title, description, style, size, now, wid, uid))
     return {"ok": True, "id": wid, "preview_url": f"/preview/{site['filename']}"}
+
+@app.post("/websites/{wid}/iterate")
+async def iterate_website(wid: str, req: WebsiteIterateReq, user: Dict = Depends(_get_current_user)):
+    uid = user.get("id") or user.get("sub","")
+    await _check_rate_limit(user, "websites")
+    site = await db_fetchone("SELECT * FROM websites WHERE id=? AND user_id=?", (wid, uid))
+    if not site:
+        raise HTTPException(404, "Website not found")
+    src = SITES_DIR / site["filename"]
+    existing = src.read_text(encoding="utf-8", errors="replace") if src.exists() else ""
+    html = await _iterate_website(existing, req.change_request, site["title"], req.model_id, req.preserve_brand)
+    now = _utcnow()
+    if req.save_as_new:
+        new_id = _new_id(); fname = f"{new_id}.html"
+        (SITES_DIR / fname).write_text(html, encoding="utf-8")
+        prompt_used = json.dumps({
+            "source_website_id": wid,
+            "iteration_request": req.change_request,
+            "preserve_brand": req.preserve_brand,
+        })
+        title = f"{site['title']} Iteration"[:100]
+        await db_execute(
+            "INSERT INTO websites(id,user_id,title,description,filename,style,prompt_used,html_size_bytes,created_at,updated_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (new_id, uid, title, site["description"], fname, site["style"], prompt_used, len(html.encode()), now, now))
+        return {"ok": True, "id": new_id, "title": title, "preview_url": f"/preview/{fname}", "html_size_bytes": len(html.encode())}
+    src.write_text(html, encoding="utf-8")
+    try:
+        prompt_meta = json.loads(site.get("prompt_used") or "{}")
+    except Exception:
+        prompt_meta = {}
+    prompt_meta["last_iteration"] = {"request": req.change_request, "at": now}
+    await db_execute(
+        "UPDATE websites SET prompt_used=?,html_size_bytes=?,updated_at=? WHERE id=? AND user_id=?",
+        (json.dumps(prompt_meta), len(html.encode()), now, wid, uid))
+    return {"ok": True, "id": wid, "preview_url": f"/preview/{site['filename']}", "html_size_bytes": len(html.encode())}
 
 @app.post("/websites/{wid}/duplicate")
 async def duplicate_website(wid: str, user: Dict = Depends(_get_current_user)):

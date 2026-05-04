@@ -190,6 +190,8 @@ select.input{cursor:pointer;appearance:none}
 
 /* ── Cards / Badges ── */
 .card{background:#0c0c1a;border:1px solid #1a1a30;border-radius:12px;padding:16px}
+.ws-builder-shell{grid-template-columns:minmax(320px,440px) minmax(0,1fr)}
+@media(max-width:980px){.ws-builder-shell{grid-template-columns:1fr!important}.ws-builder-shell>.card{position:relative!important}}
 .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;font-family:'DM Mono',monospace}
 .badge-free{background:#1a1a30;color:#9090b0}
 .badge-pro{background:#1e1b4b;color:#818cf8}
@@ -5363,6 +5365,139 @@ async function saveSiteEdit(id) {
 // ═══════════════════════════════════════════════
 // ── CODE RUNNER ──
 // ═══════════════════════════════════════════════
+async function websites() {
+  const modelOptions = (S.models || []).map(m=>`<option value="${escAttr(m.id)}">${escHtml(m.label || m.id)}</option>`).join('');
+  document.getElementById('main-content').innerHTML = `
+  <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
+    <div class="workspace-header"><span class="page-icon">WEB</span><div><div class="page-title">Website Builder</div><div style="font-size:12px;color:#70709a">Prompt, generate, iterate, preview, export.</div></div></div>
+    <div style="flex:1;overflow-y:auto;padding:18px;display:grid;gap:16px;align-items:start" class="ws-builder-shell">
+      <div class="card" style="position:sticky;top:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">
+          <div><div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800">Build Studio</div><div style="font-size:12px;color:#70709a">Richer generated websites and app-like prototypes.</div></div>
+          <span class="badge badge-ok">v2</span>
+        </div>
+        <div style="display:grid;gap:10px">
+          <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Project Name</label><input class="input" id="ws-title" placeholder="AI sales dashboard"></div>
+          <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">What should it build?</label><textarea class="input" id="ws-desc" rows="5" placeholder="A SaaS analytics product with onboarding, pricing, dashboard preview, testimonials, and a working ROI calculator."></textarea></div>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+            <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Type</label><select class="input" id="ws-type"><option value="landing">Landing</option><option value="saas">SaaS</option><option value="portfolio">Portfolio</option><option value="commerce">Commerce</option><option value="dashboard">Dashboard</option><option value="marketplace">Marketplace</option><option value="tool">Interactive Tool</option><option value="mobile-app">Mobile App Promo</option></select></div>
+            <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Style</label><select class="input" id="ws-style"><option>saas</option><option>modern</option><option>app</option><option>futuristic</option><option>minimal</option><option>editorial</option><option>commerce</option><option>agency</option><option>dark</option><option>glassmorphism</option><option>brutalist</option><option>retro</option></select></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+            <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Theme</label><select class="input" id="ws-theme"><option value="auto">Auto</option><option value="dark">Dark</option><option value="light">Light</option><option value="system">Light + Dark Toggle</option></select></div>
+            <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Interaction</label><select class="input" id="ws-interactivity"><option value="rich">Rich</option><option value="prototype">Prototype</option><option value="marketing">Marketing</option><option value="dashboard">Dashboard</option><option value="minimal">Minimal</option></select></div>
+          </div>
+          <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Audience</label><input class="input" id="ws-audience" placeholder="Startup founders, recruiters, clinic owners"></div>
+          <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Sections</label><input class="input" id="ws-pages" placeholder="Hero, Product, Pricing, FAQ, Contact"></div>
+          <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Features</label><input class="input" id="ws-features" placeholder="mobile nav, tabs, ROI calculator, modal, localStorage"></div>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+            <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Palette</label><input class="input" id="ws-palette" placeholder="charcoal, violet, mint"></div>
+            <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">SEO</label><input class="input" id="ws-seo" placeholder="AI CRM, lead scoring"></div>
+          </div>
+          <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Model</label><select class="input" id="ws-model">${modelOptions}</select></div>
+          <div><label style="font-size:11px;color:#4a4a6a;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Extra Instructions</label><textarea class="input" id="ws-extra" rows="3" placeholder="Make it feel like a real shipped product. Include all expected states and responsive mobile layout."></textarea></div>
+          <button class="btn btn-primary" onclick="buildSite()" id="ws-btn" style="justify-content:center;padding:12px">Generate Website</button>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+          <div style="font-family:'Syne',sans-serif;font-weight:800">Projects</div>
+          <button class="btn btn-ghost btn-sm" onclick="loadSites()">Refresh</button>
+        </div>
+        <div id="site-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
+      </div>
+    </div>
+  </div>`;
+  loadSites();
+}
+async function loadSites() {
+  try {
+    const d = await get('/websites'), el = document.getElementById('site-list');
+    if (!el) return;
+    if (!d.websites.length) { el.innerHTML = '<div class="card" style="color:#70709a">No websites yet. Describe a product and generate the first version.</div>'; return; }
+    el.innerHTML = d.websites.map(s => {
+      const prompt = s.prompt || {};
+      const features = Array.isArray(prompt.features) ? prompt.features.slice(0,3).join(', ') : '';
+      return `<div class="card fade-in" style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+          <div style="min-width:0"><div style="font-weight:800;font-size:15px;margin-bottom:4px;font-family:'Syne',sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(s.title)}</div>
+          <div style="font-size:12px;color:#9090b0;line-height:1.4;min-height:34px">${escHtml((s.description||'').slice(0,110))}</div></div>
+          <span class="badge badge-info">${escHtml(s.style || 'site')}</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:11px;color:#4a4a6a;font-family:'DM Mono',monospace">${fmtSize(s.html_size_bytes)}</span>
+          <span style="font-size:11px;color:#4a4a6a">${escHtml(prompt.site_type || 'custom')}</span>
+          ${features ? `<span style="font-size:11px;color:#70709a">+ ${escHtml(features)}</span>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:auto">
+          <a href="${API+s.preview_url}" target="_blank" class="btn btn-ghost btn-sm">Preview</a>
+          <button class="btn btn-ghost btn-sm" onclick="iterateSite('${escAttr(s.id)}')">Iterate</button>
+          <button class="btn btn-ghost btn-sm" onclick="editSite('${escAttr(s.id)}')">Code</button>
+          <button class="btn btn-ghost btn-sm" onclick="duplicateSite('${escAttr(s.id)}')">Duplicate</button>
+          <a href="${API}/websites/${s.id}/download?token=${encodeURIComponent(S.token||'')}" target="_blank" class="btn btn-ghost btn-sm">HTML</a>
+          <button class="btn btn-ghost btn-sm" style="color:#f87171" onclick="deleteSite('${escAttr(s.id)}')">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { toast(e.message || 'Could not load websites','err'); }
+}
+function splitCsvInput(id) {
+  return (document.getElementById(id)?.value || '').split(',').map(x => x.trim()).filter(Boolean);
+}
+async function buildSite() {
+  const title = document.getElementById('ws-title')?.value.trim(), desc = document.getElementById('ws-desc')?.value.trim();
+  if (!title || !desc) { toast('Project name and prompt required','err'); return; }
+  const btn = document.getElementById('ws-btn'); if (btn) { btn.textContent = 'Generating...'; btn.disabled = true; }
+  try {
+    const d = await post('/websites/build', {
+      title, description:desc,
+      site_type:document.getElementById('ws-type')?.value || 'landing',
+      style:document.getElementById('ws-style')?.value || 'saas',
+      theme_mode:document.getElementById('ws-theme')?.value || 'auto',
+      interactivity:document.getElementById('ws-interactivity')?.value || 'rich',
+      audience:document.getElementById('ws-audience')?.value || '',
+      pages:splitCsvInput('ws-pages'),
+      features:splitCsvInput('ws-features'),
+      color_palette:document.getElementById('ws-palette')?.value || '',
+      seo_keywords:document.getElementById('ws-seo')?.value || '',
+      extra_instructions:document.getElementById('ws-extra')?.value || '',
+      model_id:document.getElementById('ws-model')?.value || S.modelId || DEFAULT_MODEL_ID
+    });
+    toast('Website generated', 'ok'); loadSites(); window.open(API+d.preview_url, '_blank');
+  } catch(e) { toast(e.message,'err'); }
+  finally { if (btn) { btn.textContent = 'Generate Website'; btn.disabled = false; } }
+}
+async function iterateSite(id) {
+  try {
+    const s = await get('/websites/'+id);
+    openModal(`<div class="modal" style="width:min(720px,calc(100vw - 24px))">
+      <button class="modal-close" onclick="closeModal()">x</button>
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:6px">Iterate Website</div>
+      <div style="font-size:12px;color:#9090b0;margin-bottom:12px">${escHtml(s.title || '')}</div>
+      <textarea class="input" id="iterate-site-request" rows="6" placeholder="Make the hero more premium, add a pricing calculator, improve mobile nav, add testimonials..."></textarea>
+      <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:12px;flex-wrap:wrap">
+        <label style="font-size:12px;color:#9090b0"><input type="checkbox" id="iterate-save-new" style="accent-color:#7c6ff7"> Save as new version</label>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="runSiteIteration('${escAttr(id)}')">Apply Changes</button>
+        </div>
+      </div>
+    </div>`);
+  } catch(e) { toast(e.message,'err'); }
+}
+async function runSiteIteration(id) {
+  const req = document.getElementById('iterate-site-request')?.value.trim();
+  if (!req) { toast('Describe the change first','err'); return; }
+  try {
+    const d = await post('/websites/'+id+'/iterate', {
+      change_request:req,
+      save_as_new:!!document.getElementById('iterate-save-new')?.checked,
+      preserve_brand:true,
+      model_id:document.getElementById('ws-model')?.value || S.modelId || DEFAULT_MODEL_ID
+    });
+    closeModal(); toast('Website updated','ok'); loadSites(); window.open(API+d.preview_url, '_blank');
+  } catch(e) { toast(e.message,'err'); }
+}
 async function code() {
   document.getElementById('main-content').innerHTML = `
   <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
