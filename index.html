@@ -5877,6 +5877,7 @@ async function adminTab(tab, el) {
         <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="adminBulkModelAccess(true)">Enable All</button>
         <button class="btn btn-ghost btn-sm" onclick="adminBulkModelAccess(false)">Disable All</button>
         <button class="btn btn-ghost btn-sm" onclick="adminSeedModels()">Restore Defaults</button>
+        <button class="btn btn-ghost btn-sm" onclick="adminImportModelDumpModal()">Import Dump</button>
         <button class="btn btn-primary btn-sm" onclick="adminAddModelModal()">+ Add Model</button>
       </div>
       ${renderAdminModelCompactList(models)}
@@ -7067,6 +7068,60 @@ function stopImpersonate(orig) { S.token = orig; document.getElementById('imp-ba
 async function adminDeleteUser(uid, email) { if (!confirm('Delete user '+email+'?')) return; try { await del('/admin/users/'+uid); toast('Deleted','ok'); adminTab('users',null); } catch(e) { toast(e.message,'err'); } }
 async function adminBroadcast() { const title = prompt('Title:'); if (!title) return; const msg = prompt('Message:'); if (!msg) return; try { await post('/admin/broadcast', { title, message:msg, type:'info' }); toast('Broadcast sent','ok'); } catch(e) { toast(e.message,'err'); } }
 async function adminCreateCoupon() { const code = prompt('Coupon code:'); if (!code) return; const tier = prompt('Tier (free/pro/premium/enterprise):'); if (!['free','pro','premium','enterprise'].includes(tier)) return; const days = prompt('Days:','30'); try { await post('/admin/coupons', { code, grants_tier:tier, duration_days:parseInt(days)||30, max_uses:100 }); toast('Coupon created','ok'); } catch(e) { toast(e.message,'err'); } }
+function adminImportModelDumpModal() {
+  const example = `[
+  {
+    "id": "custom-kimi-nvidia",
+    "name": "Kimi K2.6 NVIDIA",
+    "provider": "nvidia",
+    "base_url": "https://integrate.api.nvidia.com/v1",
+    "model_name": "moonshotai/kimi-k2.6",
+    "context_length": 128000,
+    "max_output_tokens": 16384,
+    "enabled": true,
+    "tags": ["most-intelligent"]
+  }
+]`;
+  openModal(`<div class="modal" style="width:min(820px,calc(100vw - 24px))">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div style="width:38px;height:38px;border-radius:8px;border:1px solid #7c6ff7;display:grid;place-items:center;font-family:'DM Mono',monospace;color:#8b7cf6">MD</div>
+      <div style="min-width:0">
+        <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800">Import Model Dump</div>
+        <div style="font-size:12px;color:#9090b0">Admin-only raw JSON, JS, or Python-style model arrays. API keys are stored encrypted when provided.</div>
+      </div>
+    </div>
+    <textarea class="input" id="model-dump-raw" rows="14" spellcheck="false" style="font-family:'DM Mono',monospace;font-size:12px;line-height:1.45" placeholder="${escAttr(example)}"></textarea>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:#b7b7d8;cursor:pointer">
+      <input type="checkbox" id="model-dump-dry" style="accent-color:#7c6ff7"> Preview only
+    </label>
+    <div id="model-dump-result" style="margin-top:10px;font-size:12px;color:#9090b0"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="adminImportModelDump()">Import</button>
+    </div>
+  </div>`);
+}
+async function adminImportModelDump() {
+  const raw = document.getElementById('model-dump-raw')?.value || '';
+  const dry = !!document.getElementById('model-dump-dry')?.checked;
+  const out = document.getElementById('model-dump-result');
+  if (!raw.trim()) { toast('Paste a model dump first','err'); return; }
+  if (out) out.innerHTML = 'Parsing model dump...';
+  try {
+    const d = await post('/admin/models/import-dump', { raw, dry_run: dry });
+    const rows = (d.models || []).map(m => `<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #1a1a30"><span class="badge badge-info">${escHtml(m.action || 'ready')}</span><span style="font-weight:700;color:#e4e4f4">${escHtml(m.name || m.id)}</span><span style="color:#73739a">${escHtml(m.provider || '')}</span><span style="margin-left:auto;font-family:'DM Mono',monospace;color:#9090b0">${escHtml(m.model_name || '')}</span></div>`).join('');
+    const errs = (d.errors || []).map(e => `<div class="badge badge-err" style="margin-top:6px">#${Number(e.index)+1}: ${escHtml(e.error || 'error')}</div>`).join('');
+    if (out) out.innerHTML = `${rows || '<div>No importable models found.</div>'}${errs}`;
+    toast(dry ? `Previewed ${d.imported || 0} model(s)` : `Imported ${d.imported || 0} model(s)`, d.errors?.length ? 'warn' : 'ok');
+    if (!dry) {
+      await loadModels();
+      setTimeout(() => { closeModal(); adminTab('models', null); }, 600);
+    }
+  } catch(e) {
+    if (out) out.innerHTML = `<div class="badge badge-err">${escHtml(e.message)}</div>`;
+    toast(e.message, 'err');
+  }
+}
 function adminAddModelModal() {
   openModal(`<div class="modal" style="width:520px">
     <div style="font-family:'Syne',sans-serif;font-size:17px;font-weight:700;margin-bottom:16px">Add AI Model</div>

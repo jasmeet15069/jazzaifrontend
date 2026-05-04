@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 # ─── stdlib ───────────────────────────────────────────────────────────────────
-import asyncio, base64, csv, hashlib, hmac, html as html_lib, io, json, logging, math, os, platform, socket
+import ast, asyncio, base64, csv, hashlib, hmac, html as html_lib, io, json, logging, math, os, platform, socket
 import smtplib, ssl
 import re, secrets, shlex, shutil, subprocess, sys, tempfile, time, traceback, uuid
 import urllib.parse, urllib.request, urllib.error
@@ -5826,6 +5826,10 @@ class AIModelUpdate(BaseModel):
     temperature_default: Optional[float] = Field(None, ge=0.0, le=2.0)
     description: Optional[str] = None
 
+class AIModelDumpImport(BaseModel):
+    raw: str = Field(..., min_length=2, max_length=2_000_000)
+    dry_run: bool = False
+
 class MCPServerCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     description: str = ""
@@ -8773,6 +8777,250 @@ async def admin_broadcast(body: dict, admin: Dict = Depends(_require_admin)):
     await ws_manager.broadcast({"type":"broadcast","title":body.get("title",""),"message":body.get("message","")})
     return {"ok":True,"id":nid}
 
+def _model_slug(value: str) -> str:
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", str(value or "").strip().lower()).strip("-")
+    return (s or f"model-{_new_id()[:8]}")[:120]
+
+def _balanced_model_dump_blocks(src: str) -> List[str]:
+    blocks: List[str] = []
+    stack: List[Tuple[str, int]] = []
+    quote = ""
+    escape = False
+    pairs = {"[": "]", "{": "}"}
+    for i, ch in enumerate(src or ""):
+        if quote:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == quote:
+                quote = ""
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            continue
+        if ch in pairs:
+            stack.append((ch, i))
+        elif ch in ("]", "}") and stack:
+            open_ch, start = stack[-1]
+            if pairs[open_ch] != ch:
+                stack.clear()
+                continue
+            stack.pop()
+            if not stack:
+                block = src[start:i + 1].strip()
+                if len(block) > 2:
+                    blocks.append(block)
+    return blocks
+
+def _model_dump_candidates(raw: str) -> List[str]:
+    src = (raw or "").strip()
+    fenced = re.findall(r"```(?:json|js|javascript|python)?\s*([\s\S]*?)```", src, flags=re.I)
+    candidates = [x.strip() for x in fenced if x.strip()] + [src]
+    out: List[str] = []
+    for cand in candidates:
+        c = cand.strip().rstrip(";")
+        c = re.sub(r"^\s*export\s+default\s+", "", c, flags=re.I)
+        c = re.sub(r"^\s*module\.exports\s*=\s*", "", c, flags=re.I)
+        c = re.sub(r"^\s*(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*", "", c, flags=re.I)
+        c = re.sub(r"^\s*[A-Za-z_$][\w$\.]*\s*=\s*", "", c)
+        out.append(c.strip().rstrip(";"))
+        starts = [(c.find("["), "["), (c.find("{"), "{")]
+        starts = [(idx, ch) for idx, ch in starts if idx >= 0]
+        if starts:
+            start, ch = min(starts, key=lambda x: x[0])
+            end = c.rfind("]" if ch == "[" else "}")
+            if end > start:
+                out.append(c[start:end + 1].strip())
+        out.extend(_balanced_model_dump_blocks(c))
+    seen: Set[str] = set()
+    return [x for x in out if x and not (x in seen or seen.add(x))]
+
+def _parse_model_dump(raw: str) -> Any:
+    last_error = "Could not parse model dump"
+    for cand in _model_dump_candidates(raw):
+        for text in (cand, re.sub(r"([{\[,]\s*)([A-Za-z_][\w-]*)\s*:", r'\1"\2":', cand)):
+            try:
+                return json.loads(text)
+            except Exception as exc:
+                last_error = str(exc)
+            literal = re.sub(r"\btrue\b", "True", text)
+            literal = re.sub(r"\bfalse\b", "False", literal)
+            literal = re.sub(r"\bnull\b", "None", literal)
+            try:
+                return ast.literal_eval(literal)
+            except Exception as exc:
+                last_error = str(exc)
+    raise ValueError(last_error)
+
+def _model_dump_items(data: Any) -> List[Dict[str, Any]]:
+    if isinstance(data, list):
+        return [x for x in data if isinstance(x, dict)]
+    if not isinstance(data, dict):
+        return []
+    for key in ("models", "db_models", "builtin_models", "items", "data", "payload"):
+        value = data.get(key)
+        if isinstance(value, list):
+            return [x for x in value if isinstance(x, dict)]
+        if isinstance(value, dict):
+            nested = _model_dump_items(value)
+            if nested:
+                return nested
+    modelish = {"id", "model_id", "model_name", "model", "name", "label", "display_name", "provider_model"}
+    if modelish.intersection(data.keys()):
+        return [data]
+    if data and all(isinstance(v, dict) for v in data.values()):
+        return [dict(v, id=str(k)) for k, v in data.items()]
+    return []
+
+def _dump_str(item: Dict[str, Any], *names: str, default: str = "") -> str:
+    for name in names:
+        value = item.get(name)
+        if value is not None and not isinstance(value, (dict, list)):
+            text = str(value).strip()
+            if text:
+                return text
+    return default
+
+def _dump_bool(item: Dict[str, Any], names: Tuple[str, ...], default: bool) -> bool:
+    for name in names:
+        if name not in item:
+            continue
+        value = item.get(name)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        text = str(value).strip().lower()
+        if text in {"1", "true", "yes", "on", "enabled", "active"}:
+            return True
+        if text in {"0", "false", "no", "off", "disabled", "inactive"}:
+            return False
+    return default
+
+def _dump_int(item: Dict[str, Any], names: Tuple[str, ...], default: int, lo: int, hi: int) -> int:
+    for name in names:
+        if name not in item:
+            continue
+        try:
+            return max(lo, min(hi, int(float(str(item.get(name)).replace(",", "")))))
+        except Exception:
+            pass
+    return default
+
+def _normalize_imported_model(item: Dict[str, Any]) -> Dict[str, Any]:
+    model_name = _dump_str(item, "model_name", "provider_model", "model", "modelId", "model_id")
+    name = _dump_str(item, "name", "display_name", "label", default=model_name)
+    if not model_name and name:
+        model_name = name
+    if not model_name:
+        raise ValueError("model_name/model is required")
+    raw_base = _dump_str(item, "base_url", "api_base", "api_base_url", "endpoint", "invoke_url", "url")
+    base_url = re.sub(r"/chat/completions/?$", "", raw_base.strip())
+    provider = _dump_str(item, "provider", "source", "api_provider", default="").lower()
+    if provider in {"hf", "hugging-face", "featherless", "featherless-ai"}:
+        provider = "huggingface"
+    if not provider:
+        hay = f"{base_url} {model_name}".lower()
+        if "nvidia.com" in hay or "moonshotai/kimi" in hay:
+            provider = "nvidia"
+        elif "huggingface" in hay or ":featherless-ai" in hay or ":fireworks-ai" in hay or ":together" in hay:
+            provider = "huggingface"
+        elif "openrouter" in hay:
+            provider = "openrouter"
+        elif "groq" in hay:
+            provider = "groq"
+        else:
+            provider = "custom"
+    if not base_url:
+        base_url = _PROVIDER_DEFAULTS.get(provider, "")
+    mid = _dump_str(item, "id", "model_id", "slug", default="")
+    mid = _model_slug(mid or name or model_name)
+    if mid in BUILTIN_MODELS:
+        mid = f"{mid}-custom"
+    api_key = _dump_str(item, "api_key", "key", "token", "authorization", default="")
+    if api_key.startswith("$") or "os.environ" in api_key or api_key.lower().startswith("bearer $"):
+        api_key = ""
+    tags = item.get("tags") or item.get("tags_json") or []
+    if isinstance(tags, str):
+        try:
+            tags = json.loads(tags)
+        except Exception:
+            tags = [x.strip() for x in tags.split(",") if x.strip()]
+    if not isinstance(tags, list):
+        tags = []
+    tags = [str(t).strip() for t in tags if str(t).strip()]
+    for tag in ("imported", provider):
+        if tag and tag not in tags:
+            tags.append(tag)
+    return {
+        "id": mid,
+        "name": name[:100] or mid,
+        "provider": provider[:40] or "custom",
+        "base_url": base_url[:500],
+        "model_name": model_name[:200],
+        "api_key": api_key,
+        "is_active": _dump_bool(item, ("is_active", "enabled", "active", "access_enabled"), True),
+        "is_default": _dump_bool(item, ("is_default", "default"), False),
+        "is_fast": _dump_bool(item, ("is_fast", "fast"), False),
+        "is_vision": _dump_bool(item, ("is_vision", "vision", "multimodal"), False),
+        "is_code": _dump_bool(item, ("is_code", "code", "coder"), False),
+        "context_length": _dump_int(item, ("context_length", "ctx", "context", "max_context", "max_context_tokens"), 32768, 512, 2_000_000),
+        "max_output_tokens": _dump_int(item, ("max_output_tokens", "max_tokens", "output_tokens"), 4096, 128, 128_000),
+        "temperature_default": max(0.0, min(2.0, float(item.get("temperature_default", item.get("temperature", 0.7)) or 0.7))),
+        "description": _dump_str(item, "description", "desc", "notes", default="Imported from admin model dump.")[:1000],
+        "tags_json": json.dumps(tags[:20]),
+    }
+
+async def _upsert_imported_model(spec: Dict[str, Any], admin_uid: str, dry_run: bool = False) -> Dict[str, Any]:
+    now = _utcnow()
+    existing = await db_fetchone(
+        "SELECT id FROM ai_models WHERE id=? OR name=? OR model_name=? LIMIT 1",
+        (spec["id"], spec["name"], spec["model_name"]))
+    mid = existing["id"] if existing else spec["id"]
+    action = "updated" if existing else "created"
+    if dry_run:
+        return {"id": mid, "name": spec["name"], "provider": spec["provider"], "model_name": spec["model_name"], "action": action}
+    if spec["is_default"]:
+        await db_execute("UPDATE ai_models SET is_default=0,updated_at=?", (now,))
+    if spec["is_fast"]:
+        await db_execute("UPDATE ai_models SET is_fast=0,updated_at=?", (now,))
+    enc = _encrypt({"key": spec.get("api_key", "")})
+    if existing:
+        sets = [
+            "name=?", "provider=?", "base_url=?", "model_name=?", "is_active=?", "is_default=?",
+            "is_fast=?", "is_vision=?", "is_code=?", "context_length=?", "max_output_tokens=?",
+            "temperature_default=?", "description=?", "tags_json=?", "updated_at=?",
+        ]
+        vals: List[Any] = [
+            spec["name"], spec["provider"], spec["base_url"], spec["model_name"], int(spec["is_active"]),
+            int(spec["is_default"]), int(spec["is_fast"]), int(spec["is_vision"]), int(spec["is_code"]),
+            spec["context_length"], spec["max_output_tokens"], spec["temperature_default"],
+            spec["description"], spec["tags_json"], now,
+        ]
+        if spec.get("api_key"):
+            sets.insert(4, "encrypted_api_key=?")
+            vals.insert(4, enc)
+        vals.append(mid)
+        await db_execute(f"UPDATE ai_models SET {','.join(sets)} WHERE id=?", tuple(vals))
+    else:
+        await db_execute(
+            "INSERT INTO ai_models(id,name,provider,base_url,model_name,encrypted_api_key,"
+            "is_active,is_default,is_fast,is_vision,is_code,context_length,max_output_tokens,"
+            "temperature_default,description,tags_json,created_by,created_at,updated_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (mid, spec["name"], spec["provider"], spec["base_url"], spec["model_name"], enc,
+             int(spec["is_active"]), int(spec["is_default"]), int(spec["is_fast"]), int(spec["is_vision"]),
+             int(spec["is_code"]), spec["context_length"], spec["max_output_tokens"],
+             spec["temperature_default"], spec["description"], spec["tags_json"], admin_uid, now, now))
+    await db_execute(
+        "INSERT INTO model_access(id,model_id,display_name,source,is_enabled,created_at,updated_at)"
+        " VALUES(?,?,?,?,?,?,?)"
+        " ON CONFLICT(model_id) DO UPDATE SET display_name=excluded.display_name,"
+        "source='db',is_enabled=excluded.is_enabled,updated_at=excluded.updated_at",
+        (_new_id(), mid, spec["name"], "db", int(spec["is_active"]), now, now))
+    return {"id": mid, "name": spec["name"], "provider": spec["provider"], "model_name": spec["model_name"], "action": action}
+
 @app.get("/admin/models")
 async def admin_list_models(user: Dict = Depends(_require_admin)):
     models = await _model_access_rows(include_inactive_db=True)
@@ -8812,6 +9060,39 @@ async def admin_seed_default_models(admin: Dict = Depends(_require_admin)):
     await _seed_default_ai_models(admin_uid)
     after = await db_count("SELECT COUNT(*) as c FROM ai_models")
     return {"ok": True, "created": max(0, after - before), "total": after}
+
+@app.post("/admin/models/import-dump")
+async def admin_import_model_dump(req: AIModelDumpImport, admin: Dict = Depends(_require_admin)):
+    admin_uid = admin.get("id") or admin.get("sub","")
+    try:
+        parsed = _parse_model_dump(req.raw)
+    except ValueError as exc:
+        raise HTTPException(400, f"Model dump parse failed: {exc}")
+    items = _model_dump_items(parsed)
+    if not items:
+        raise HTTPException(400, "No model objects found in dump")
+    if len(items) > 200:
+        raise HTTPException(400, "Import up to 200 models at a time")
+    imported: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+    for idx, item in enumerate(items):
+        try:
+            spec = _normalize_imported_model(item)
+            imported.append(await _upsert_imported_model(spec, admin_uid, req.dry_run))
+        except Exception as exc:
+            errors.append({"index": idx, "error": str(exc)[:300]})
+    if imported and not req.dry_run:
+        await db_execute(
+            "INSERT INTO audit_log(id,actor_id,target_id,action,detail_json,created_at) VALUES(?,?,?,?,?,?)",
+            (_new_id(), admin_uid, "models", "model_dump_import",
+             json.dumps({"imported": len(imported), "errors": len(errors)}), _utcnow()))
+    return {
+        "ok": True,
+        "dry_run": bool(req.dry_run),
+        "imported": len(imported),
+        "errors": errors,
+        "models": imported,
+    }
 
 @app.put("/admin/models/{mid}")
 async def admin_update_model(mid: str, req: AIModelUpdate, admin: Dict = Depends(_require_admin)):
