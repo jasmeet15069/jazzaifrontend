@@ -930,9 +930,19 @@ function isBlockedApiBase(base) {
 }
 
 function apiFetch(url, opts = {}) {
+  const { timeoutMs, ...fetchOpts } = opts || {};
+  if (timeoutMs && !fetchOpts.signal) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    fetchOpts.signal = controller.signal;
+    return fetch(url, {
+      ...fetchOpts,
+      headers: { 'ngrok-skip-browser-warning': 'true', ...(fetchOpts.headers || {}) }
+    }).finally(() => clearTimeout(timer));
+  }
   return fetch(url, {
-    ...opts,
-    headers: { 'ngrok-skip-browser-warning': 'true', ...(opts.headers || {}) }
+    ...fetchOpts,
+    headers: { 'ngrok-skip-browser-warning': 'true', ...(fetchOpts.headers || {}) }
   });
 }
 
@@ -1000,6 +1010,7 @@ async function resolveApiBase(force = false) {
   const push = v => {
     const b = (v || '').trim().replace(/\/+$/, '');
     if (isBlockedApiBase(b)) return;
+    if (PUBLIC_API_BASE && !b.startsWith(PUBLIC_API_BASE)) return;
     if (b && !candidates.includes(b)) candidates.push(b);
   };
   push(localStorage.getItem('jazz_api'));
@@ -1232,10 +1243,24 @@ async function req(method, path, body, isForm) {
   if (S.token) opts.headers['Authorization'] = 'Bearer ' + S.token;
   if (body && !isForm) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   if (isForm) opts.body = body;
-  let r = await apiFetch(API + path, opts);
+  opts.timeoutMs = isForm ? 120000 : (path.startsWith('/auth/') ? 30000 : 60000);
+  const fetchApi = async () => {
+    try {
+      return await apiFetch(API + path, opts);
+    } catch(e) {
+      if (e && e.name === 'AbortError') {
+        throw new Error('Backend is taking too long. Please try again in a moment.');
+      }
+      if (/failed to fetch|networkerror|load failed/i.test(String(e && e.message || e))) {
+        throw new Error('Backend is unreachable. Please refresh and try again.');
+      }
+      throw e;
+    }
+  };
+  let r = await fetchApi();
   if ([404, 405, 501].includes(r.status) && !path.startsWith('/auth/refresh')) {
     await resolveApiBase(true);
-    r = await apiFetch(API + path, opts);
+    r = await fetchApi();
   }
   if (r.status === 401 && S.refresh) {
     const rr = await apiFetch(API + '/auth/refresh', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ refresh_token: S.refresh }) });
@@ -1243,7 +1268,7 @@ async function req(method, path, body, isForm) {
       const d = await rr.json();
       S.token = d.access_token; S.refresh = d.refresh_token; save();
       opts.headers['Authorization'] = 'Bearer ' + S.token;
-      r = await apiFetch(API + path, opts);
+      r = await fetchApi();
     } else { doLogout(); throw new Error('Session expired'); }
   }
   if (!r.ok) {
