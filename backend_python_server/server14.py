@@ -1236,6 +1236,54 @@ def _mail_sender_from() -> str:
         return f"{name} <{raw}>"
     return raw
 
+def _has_primary_email_sender() -> bool:
+    return bool((os.getenv("RESEND_API_KEY") or "").strip() or (os.getenv("SMTP_HOST") or "").strip())
+
+def _supabase_mail_config() -> Tuple[str, str]:
+    base = (
+        os.getenv("SUPABASE_URL")
+        or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        or ""
+    ).strip().rstrip("/")
+    key = (
+        os.getenv("SUPABASE_PUBLISHABLE_KEY")
+        or os.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")
+        or ""
+    ).strip()
+    if not base or not key:
+        raise RuntimeError("Email delivery is not configured. Set RESEND_API_KEY, SMTP settings, or Supabase publishable auth keys.")
+    return base, key
+
+def _send_supabase_link_email_sync(to_email: str, link: str, flow: str) -> Dict[str, Any]:
+    to_email = _validated_email(to_email)
+    base, key = _supabase_mail_config()
+    redirect = urllib.parse.quote(link, safe="")
+    endpoint = f"{base}/auth/v1/otp?redirect_to={redirect}"
+    payload = {
+        "email": to_email,
+        "create_user": True,
+        "data": {"jazz_auth_flow": flow},
+        "options": {"email_redirect_to": link},
+    }
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "X-Client-Info": "jazz-ai-server/14",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            body = resp.read().decode("utf-8", "ignore")
+            return {"provider": "supabase", "status": resp.status, "body": body[:300]}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "ignore")
+        raise RuntimeError(f"Supabase email failed ({exc.code}): {body[:300]}")
+
 def _send_email_sync(to_email: str, subject: str, text: str, html: str = "") -> Dict[str, Any]:
     to_email = _validated_email(to_email)
     sender = _mail_sender_from()
@@ -1297,7 +1345,14 @@ async def _send_email_async(to_email: str, subject: str, text: str, html: str = 
         _executor, _send_email_sync, to_email, subject, text, html
     )
 
+async def _send_supabase_link_email_async(to_email: str, link: str, flow: str) -> Dict[str, Any]:
+    return await asyncio.get_running_loop().run_in_executor(
+        _executor, _send_supabase_link_email_sync, to_email, link, flow
+    )
+
 async def _send_verification_email(email: str, link: str) -> Dict[str, Any]:
+    if not _has_primary_email_sender():
+        return await _send_supabase_link_email_async(email, link, "verify_email")
     subject = "Verify your JAZZ AI account"
     text = (
         "Welcome to JAZZ AI.\n\n"
@@ -1316,6 +1371,8 @@ async def _send_verification_email(email: str, link: str) -> Dict[str, Any]:
     return await _send_email_async(email, subject, text, html)
 
 async def _send_password_reset_email(email: str, link: str) -> Dict[str, Any]:
+    if not _has_primary_email_sender():
+        return await _send_supabase_link_email_async(email, link, "password_reset")
     subject = "Reset your JAZZ AI password"
     text = (
         "Reset your JAZZ AI password with this secure link:\n"
