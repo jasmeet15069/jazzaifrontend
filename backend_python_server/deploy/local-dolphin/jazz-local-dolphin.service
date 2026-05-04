@@ -1,0 +1,14 @@
+[Unit]
+Description=Jazz AI local Dolphin 0.5B llama.cpp server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/local-llm
+Environment=LD_LIBRARY_PATH=/root/local-llm/llama-b8833
+ExecStart=/root/local-llm/start-local-dolphin.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
