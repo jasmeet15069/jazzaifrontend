@@ -1,0 +1,27 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "http://45.79.124.28:8000/:path*"
+    },
+    {
+      "source": "/c/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/auth/supabase/:path*",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, max-age=0"
+        }
+      ]
+    }
+  ]
+}

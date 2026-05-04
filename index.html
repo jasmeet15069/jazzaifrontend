@@ -907,7 +907,14 @@ try {
 // ═══════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════
-const DEFAULT_API_BASE = 'https://imperceptibly-hymnlike-leesa.ngrok-free.dev';
+const PUBLIC_API_BASE = (() => {
+  try {
+    const host = (window.location.hostname || '').toLowerCase();
+    if (host === 'jazzai.online' || host === 'www.jazzai.online') return `${window.location.origin}/api`;
+  } catch(e) {}
+  return '';
+})();
+const DEFAULT_API_BASE = PUBLIC_API_BASE || 'http://127.0.0.1:8000';
 const SUPABASE_PUBLIC = Object.freeze({
   url: 'https://nirnrxiuguoqwyuvulie.supabase.co',
   publishableKey: 'sb_publishable_CC92GWIHtyljAxYXIvpmLg_4ZsBtEGB',
@@ -918,7 +925,7 @@ let WS_URL = API.replace('https://', 'wss://').replace('http://', 'ws://');
 let _apiResolved = false;
 
 function isBlockedApiBase(base) {
-  return false;
+  return /imperceptibly-hymnlike-leesa\.ngrok-free\.dev/i.test(String(base || ''));
 }
 
 function apiFetch(url, opts = {}) {
@@ -974,6 +981,10 @@ function apiBaseCandidatesForLocation() {
     if (!loc || !loc.hostname || loc.origin === 'null') return out;
     const proto = loc.protocol === 'https:' ? 'https:' : 'http:';
     const host = loc.hostname;
+    if ((host || '').toLowerCase() === 'jazzai.online' || (host || '').toLowerCase() === 'www.jazzai.online') {
+      add(`${loc.origin}/api`);
+      return out;
+    }
     const currentPort = loc.port || (proto === 'https:' ? '443' : '80');
     if (currentPort !== '8000') add(`${proto}//${host}:8000`);
     if (currentPort !== '8080') add(`${proto}//${host}:8080`);
@@ -1007,6 +1018,10 @@ async function resolveApiBase(force = false) {
     }
   }
   _apiResolved = true;
+  if (DEFAULT_API_BASE) {
+    setApiBase(DEFAULT_API_BASE);
+    localStorage.setItem('jazz_api', API);
+  }
   return API;
 }
 
