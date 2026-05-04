@@ -914,7 +914,8 @@ const PUBLIC_API_BASE = (() => {
   } catch(e) {}
   return '';
 })();
-const DEFAULT_API_BASE = PUBLIC_API_BASE || 'http://127.0.0.1:8000';
+const DIRECT_API_BASE = 'http://45.79.124.28:8000';
+const DEFAULT_API_BASE = PUBLIC_API_BASE || DIRECT_API_BASE;
 const SUPABASE_PUBLIC = Object.freeze({
   url: 'https://nirnrxiuguoqwyuvulie.supabase.co',
   publishableKey: 'sb_publishable_CC92GWIHtyljAxYXIvpmLg_4ZsBtEGB',
