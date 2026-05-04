@@ -3020,17 +3020,105 @@ _LOCAL_JAZZ_FAST_SYSTEM_PROMPT = (
     "Do not invent the user's name."
 )
 
+_GENERIC_PROFILE_NAMES = {"jazz", "jazzai", "jazz ai", "admin", "user", "test", "client", "account"}
+
+def _clean_person_name(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    raw = re.sub(r"\S+@\S+", " ", raw)
+    raw = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ' -]+", " ", raw)
+    parts = [p.strip(" '-") for p in re.split(r"\s+", raw) if p.strip(" '-")]
+    parts = [p for p in parts if len(p) > 1 and p.lower() not in _GENERIC_PROFILE_NAMES]
+    if not parts:
+        return ""
+    return " ".join(p[:1].upper() + p[1:] for p in parts[:3])[:120]
+
+def _name_from_email(email: str) -> str:
+    local = (email or "").split("@", 1)[0].split("+", 1)[0]
+    local = re.sub(r"\d+", " ", local)
+    local = re.sub(r"[._-]+", " ", local).strip()
+    return _clean_person_name(local)
+
 def _display_name_from_user_row(row: Optional[Dict[str, Any]]) -> str:
     if not row:
         return ""
     full_name = (row.get("full_name") or "").strip()
-    if full_name:
-        return full_name[:120]
+    cleaned_full = _clean_person_name(full_name)
+    if cleaned_full:
+        return cleaned_full
     email = (row.get("email") or "").strip()
     if not email or "@" not in email:
         return ""
-    local = re.sub(r"[._-]+", " ", email.split("@", 1)[0]).strip()
-    return " ".join(part[:1].upper() + part[1:] for part in local.split())[:120]
+    return _name_from_email(email)
+
+def _is_name_recall_query(text: str) -> bool:
+    t = re.sub(r"\s+", " ", (text or "").lower()).strip()
+    if not t:
+        return False
+    phrases = (
+        "what is my name", "what's my name", "who am i", "who i am",
+        "do you know my name", "remember my name", "recall my name",
+        "tell me my name", "try to remember", "do you remember me",
+    )
+    return any(p in t for p in phrases) or (("my name" in t or "my identity" in t) and any(v in t for v in ("know", "remember", "recall", "tell", "guess")))
+
+def _name_from_memory_row(row: Dict[str, Any]) -> str:
+    key = str(row.get("key") or "").lower()
+    value = str(row.get("value") or "")
+    if "name" in key or "identity" in key:
+        return _clean_person_name(value)
+    m = re.search(r"\b(?:my name is|i am|i'm|call me)\s+([A-Za-z][A-Za-zÀ-ÖØ-öø-ÿ' -]{1,60})", value, re.I)
+    return _clean_person_name(m.group(1)) if m else ""
+
+def _name_from_history_text(text: str) -> str:
+    patterns = (
+        r"\bmy name is\s+([A-Za-z][A-Za-zÀ-ÖØ-öø-ÿ' -]{1,60})",
+        r"\bcall me\s+([A-Za-z][A-Za-zÀ-ÖØ-öø-ÿ' -]{1,60})",
+        r"\bi am\s+([A-Za-z][A-Za-zÀ-ÖØ-öø-ÿ' -]{1,60})",
+        r"\bi'm\s+([A-Za-z][A-Za-zÀ-ÖØ-öø-ÿ' -]{1,60})",
+    )
+    for pat in patterns:
+        m = re.search(pat, text or "", re.I)
+        if m:
+            name = _clean_person_name(m.group(1))
+            if name:
+                return name
+    return ""
+
+async def _resolve_user_name(user_id: str, user_claims: Optional[Dict[str, Any]] = None) -> Tuple[str, str]:
+    row = await db_fetchone("SELECT email,full_name FROM users WHERE id=?", (user_id,))
+    name = _display_name_from_user_row(row)
+    if name and (row or {}).get("full_name"):
+        return name, "your profile"
+    mems = await _get_memories(user_id, 40)
+    for mem in mems:
+        name = _name_from_memory_row(mem)
+        if name:
+            return name, "memory"
+    rows = await db_fetchall(
+        "SELECT content FROM chat_history WHERE user_id=? AND role='user' AND is_hidden=0 "
+        "ORDER BY created_at DESC LIMIT 120",
+        (user_id,))
+    for item in rows:
+        name = _name_from_history_text(item.get("content") or "")
+        if name:
+            return name, "previous chat"
+    if row and row.get("email"):
+        name = _name_from_email(row["email"])
+        if name:
+            return name, "your email"
+    email = (user_claims or {}).get("email", "")
+    name = _name_from_email(email)
+    return (name, "your email") if name else ("", "")
+
+async def _identity_recall_reply(user_id: str, message: str, user_claims: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    if not _is_name_recall_query(message):
+        return None
+    name, source = await _resolve_user_name(user_id, user_claims)
+    if name:
+        return f"Your name is {name}. I got it from {source}."
+    return "I do not have a reliable name saved for you yet. Add it in your profile or tell me “my name is ...”, and I will remember it."
 
 def _authenticated_user_context(row: Optional[Dict[str, Any]]) -> str:
     name = _display_name_from_user_row(row)
@@ -7288,6 +7376,28 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
                 tool_log.append(ev)
                 yield f"data: {json.dumps(ev)}\n\n"
 
+            identity_reply = await _identity_recall_reply(uid, req.message, user)
+            if identity_reply:
+                ev = {"type":"tool_result","tool":"identity","label":"Recovered your name from account context","count":1}
+                tool_log.append(ev)
+                yield f"data: {json.dumps(ev)}\n\n"
+                async for chunk in _stream_text(identity_reply):
+                    yield f"data: {chunk}\n\n"
+                elapsed = int((time.time()-t0)*1000)
+                now = _utcnow(); mid = _new_id()
+                await db_execute(
+                    "INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,created_at) VALUES(?,?,?,'user',?,?,?)",
+                    (_new_id(), sid, uid, req.message, active_model_id, now))
+                await db_execute(
+                    "INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,latency_ms,tool_calls_json,mode,created_at)"
+                    " VALUES(?,?,?,'assistant',?,?,?,?,'normal',?)",
+                    (mid, sid, uid, identity_reply, active_model_id, elapsed, json.dumps(tool_log), now))
+                await db_execute("UPDATE chat_sessions SET model_id=?,last_message_at=?,turn_count=turn_count+1,updated_at=? WHERE id=?",
+                                 (active_model_id, now, now, sid))
+                context = await _context_window_status(sid, uid, active_model_id)
+                yield f"data: {json.dumps({'type':'done','message_id':mid,'content':identity_reply,'latency_ms':elapsed,'tokens':{'input':_count_tokens(req.message),'output':_count_tokens(identity_reply)},'mode':'normal','context':context,'model_id':active_model_id,'model_label':await _model_display_name(active_model_id)})}\n\n"
+                return
+
             latex_req = _latex_compile_request_from_message(req.message)
             if latex_req:
                 start_ev = {"type":"tool_start","tool":"latex","label":"Compiling LaTeX to PDF" if latex_req.output == "pdf" else "Preparing LaTeX source"}
@@ -7642,6 +7752,17 @@ async def chat_message(req: ChatReq, background: BackgroundTasks, user: Dict = D
     skills, skill_matches = await _select_skills_for_message(req.message, tool_opts.get("skill_ids", req.skill_ids) or [])
     web_results = await _web_search(req.message, 6) if use_web else None
     tool_log: List[Dict[str, Any]] = []
+    identity_reply = await _identity_recall_reply(uid, req.message, user)
+    if identity_reply:
+        elapsed = int((time.time()-t0)*1000); now = _utcnow(); mid = _new_id()
+        tool_log.append({"type":"tool_result","tool":"identity","label":"Recovered your name from account context","count":1})
+        await db_execute("INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,created_at) VALUES(?,?,?,'user',?,?,?)",
+                         (_new_id(), sid, uid, req.message, active_model_id, now))
+        await db_execute("INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,latency_ms,tool_calls_json,mode,created_at) VALUES(?,?,?,'assistant',?,?,?,?,'normal',?)",
+                         (mid, sid, uid, identity_reply, active_model_id, elapsed, json.dumps(tool_log), now))
+        await db_execute("UPDATE chat_sessions SET model_id=?,last_message_at=?,turn_count=turn_count+1,updated_at=? WHERE id=?",(active_model_id,now,now,sid))
+        context = await _context_window_status(sid, uid, active_model_id)
+        return {"message_id":mid,"content":identity_reply,"session_id":sid,"latency_ms":elapsed,"context":context,"model_id":active_model_id,"model_label":await _model_display_name(active_model_id)}
     effective_message, _ = await _build_image_context(req, uid, active_model_id, tool_log)
     messages = await _build_context(sid, uid, effective_message, use_rag, active_model_id,
                                     web_results, plan_mode, _format_skill_context(skills),
