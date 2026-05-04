@@ -935,6 +935,7 @@ const PUBLIC_API_BASE = (() => {
 })();
 const DIRECT_API_BASE = 'http://45.79.124.28:8000';
 const DEFAULT_API_BASE = PUBLIC_API_BASE || DIRECT_API_BASE;
+const PRODUCTION_APP_ORIGIN = 'https://www.jazzai.online';
 const SUPABASE_PUBLIC = Object.freeze({
   url: 'https://nirnrxiuguoqwyuvulie.supabase.co',
   publishableKey: 'sb_publishable_CC92GWIHtyljAxYXIvpmLg_4ZsBtEGB',
@@ -1519,6 +1520,74 @@ async function handleSupabaseAuthCallback() {
   } catch(e) {
     setAuthError(e.message || 'Supabase sign in failed');
     window.history.replaceState({}, document.title, '/');
+    return true;
+  } finally {
+    setAuthLoading(false);
+  }
+}
+async function handleSupabaseEmailVerificationHash() {
+  try {
+    const rawHash = window.location.hash || '';
+    if (!rawHash || !rawHash.includes('access_token=')) return false;
+    const params = new URLSearchParams(rawHash.replace(/^#/, ''));
+    const accessToken = params.get('access_token') || '';
+    const type = (params.get('type') || '').toLowerCase();
+    if (!accessToken || !['signup', 'magiclink', 'email'].includes(type)) return false;
+    const host = (window.location.hostname || '').toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      window.location.replace(PRODUCTION_APP_ORIGIN + '/' + rawHash);
+      return true;
+    }
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-page').style.display = 'flex';
+    switchAuthTab('login');
+    setAuthLoading(true);
+    setAuthSuccess('Verifying your email...');
+    await resolveApiBase();
+    const d = await post('/auth/supabase/confirm-email', { access_token: accessToken });
+    window.history.replaceState({}, document.title, '/');
+    setAuthSuccess(d.message || 'Email verified. Sign in now.');
+    if (d.email) document.getElementById('auth-email').value = d.email;
+    document.getElementById('auth-resend-btn').style.display = 'none';
+    return true;
+  } catch(e) {
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-page').style.display = 'flex';
+    window.history.replaceState({}, document.title, '/');
+    setAuthError(e.message || 'Verification link is invalid or expired');
+    return true;
+  } finally {
+    setAuthLoading(false);
+  }
+}
+async function handleJazzEmailVerificationRoute() {
+  try {
+    if (!/^\/auth\/verify-email\/?$/.test(window.location.pathname || '')) return false;
+    const qs = new URLSearchParams(window.location.search || '');
+    const token = qs.get('token') || '';
+    if (!token) return false;
+    const host = (window.location.hostname || '').toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      window.location.replace(PRODUCTION_APP_ORIGIN + '/auth/verify-email?token=' + encodeURIComponent(token));
+      return true;
+    }
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-page').style.display = 'flex';
+    switchAuthTab('login');
+    setAuthLoading(true);
+    setAuthSuccess('Verifying your email...');
+    await resolveApiBase();
+    const r = await apiFetch(API + '/auth/verify-email?token=' + encodeURIComponent(token), { method:'GET', cache:'no-store', timeoutMs:30000 });
+    if (!r.ok) throw new Error('Verification link is invalid or expired');
+    window.history.replaceState({}, document.title, '/');
+    setAuthSuccess('Email verified. Sign in now.');
+    document.getElementById('auth-resend-btn').style.display = 'none';
+    return true;
+  } catch(e) {
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-page').style.display = 'flex';
+    window.history.replaceState({}, document.title, '/');
+    setAuthError(e.message || 'Verification link is invalid or expired');
     return true;
   } finally {
     setAuthLoading(false);
@@ -7598,6 +7667,8 @@ loadSaved();
 (async () => {
   await resolveApiBase();
   await loadPlatformStatus();
+  if (await handleSupabaseEmailVerificationHash()) return;
+  if (await handleJazzEmailVerificationRoute()) return;
   checkResetPasswordRoute();
   if (await handleSupabaseAuthCallback()) return;
   if (S.token && S.user) {

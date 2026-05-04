@@ -11,6 +11,10 @@
     {
       "source": "/auth/supabase/:path*",
       "destination": "/index.html"
+    },
+    {
+      "source": "/auth/verify-email",
+      "destination": "/index.html"
     }
   ],
   "headers": [

@@ -1296,6 +1296,32 @@ def _send_supabase_link_email_sync(to_email: str, link: str, flow: str) -> Dict[
         body = exc.read().decode("utf-8", "ignore")
         raise RuntimeError(f"Supabase email failed ({exc.code}): {body[:300]}")
 
+def _supabase_user_from_access_token_sync(access_token: str) -> Dict[str, Any]:
+    token = (access_token or "").strip()
+    if not token:
+        raise RuntimeError("Missing Supabase access token")
+    base, key = _supabase_mail_config()
+    req = urllib.request.Request(
+        f"{base.rstrip('/')}/auth/v1/user",
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {token}",
+            "X-Client-Info": "jazz-ai-server/14",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.loads(resp.read().decode("utf-8", "ignore") or "{}")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "ignore")
+        raise RuntimeError(f"Supabase token verification failed ({exc.code}): {body[:300]}")
+
+async def _supabase_user_from_access_token(access_token: str) -> Dict[str, Any]:
+    return await asyncio.get_running_loop().run_in_executor(
+        _executor, _supabase_user_from_access_token_sync, access_token
+    )
+
 def _send_email_sync(to_email: str, subject: str, text: str, html: str = "") -> Dict[str, Any]:
     to_email = _validated_email(to_email)
     sender = _mail_sender_from()
@@ -6115,6 +6141,9 @@ class SupabaseOAuthExchange(BaseModel):
     state: str = Field(..., min_length=8)
     redirect_uri: str = Field(..., min_length=8)
 
+class SupabaseEmailConfirmIn(BaseModel):
+    access_token: str = Field(..., min_length=20, max_length=12000)
+
 class ProfileUpdate(BaseModel):
     full_name: Optional[str] = None
     memory_enabled: Optional[bool] = None
@@ -6470,6 +6499,48 @@ async def auth_supabase_start_url(request: Request, redirect_uri: str = ""):
 async def auth_supabase_exchange(body: SupabaseOAuthExchange):
     profile = await _exchange_supabase_oauth_code(body)
     return await _issue_jazz_auth_for_supabase_profile(profile)
+
+@app.post("/auth/supabase/confirm-email")
+async def auth_supabase_confirm_email(body: SupabaseEmailConfirmIn):
+    try:
+        profile = await _supabase_user_from_access_token(body.access_token)
+    except Exception as e:
+        logger.warning("[AUTH] Supabase email token verification failed: %s", e)
+        raise HTTPException(400, "Verification link is invalid or expired")
+    email = _validated_email(
+        profile.get("email")
+        or (profile.get("user_metadata") or {}).get("email")
+        or ""
+    )
+    is_confirmed = bool(
+        profile.get("email_confirmed_at")
+        or profile.get("confirmed_at")
+        or (profile.get("user_metadata") or {}).get("email_verified")
+    )
+    if not is_confirmed:
+        raise HTTPException(400, "Email is not verified by Supabase yet")
+    row = await db_fetchone("SELECT id,is_verified FROM users WHERE email=?", (email,))
+    if not row:
+        return {
+            "ok": True,
+            "email": email,
+            "jazz_user_found": False,
+            "message": "Email verified. Create your JAZZ account, then sign in.",
+        }
+    now = _utcnow()
+    if not int(row.get("is_verified") or 0):
+        await db_execute("UPDATE users SET is_verified=1,updated_at=? WHERE id=?", (now, row["id"]))
+        await db_execute(
+            "INSERT INTO audit_log(id,actor_id,target_id,action,detail_json,created_at) VALUES(?,?,?,?,?,?)",
+            (_new_id(), row["id"], row["id"], "supabase_email_verified",
+             json.dumps({"email": email}), now),
+        )
+    return {
+        "ok": True,
+        "email": email,
+        "jazz_user_found": True,
+        "message": "Email verified. Sign in now.",
+    }
 
 @app.post("/auth/register")
 async def auth_register(request: Request, body: AuthIn):
