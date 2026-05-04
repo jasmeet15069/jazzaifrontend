@@ -330,7 +330,7 @@ SUBSCRIPTION_LIMITS: Dict[str, Dict[str, Any]] = {
 PLAN_TIERS = ("free", "pro", "premium", "enterprise")
 RATE_LIMIT_RESOURCES = [
     ("messages_per_day", "Messages per day", "Chat, multi-model, voice, and agent message budget."),
-    ("documents", "Documents", "Indexed documents a user can keep."),
+    ("documents", "Documents", "Processed documents a user can keep."),
     ("max_file_mb", "Max file size MB", "Largest upload size allowed."),
     ("agent_jobs", "Agent jobs", "Scheduled or saved agent jobs."),
     ("websites", "Websites", "Generated websites saved in the portal."),
@@ -2627,12 +2627,12 @@ async def _index_document(doc_id: str, user_id: str, path: Path, collection: str
     await db_executemany(
         "INSERT OR REPLACE INTO embeddings_meta(id,document_id,user_id,chunk_index,chunk_text,chroma_id,embed_model,token_count,created_at)"
         " VALUES(?,?,?,?,?,?,?,?,?)",
-        [(_new_id(), doc_id, user_id, i, chunks[i][:500], ids[i], "all-MiniLM-L6-v2",
+        [(_new_id(), doc_id, user_id, i, chunks[i], ids[i], "all-MiniLM-L6-v2",
           _count_tokens(chunks[i]), now) for i in range(len(chunks))])
     await db_execute(
         "UPDATE documents SET is_indexed=1,indexed_at=?,chunk_count=?,char_count=?,page_count=?,index_error=NULL WHERE id=?",
         (now, len(chunks), len(text), pages, doc_id))
-    logger.info("[RAG] Indexed %d chunks for doc %s", len(chunks), doc_id)
+    logger.info("[RAG] Processed %d chunks for doc %s", len(chunks), doc_id)
 
 def _bm25_score(query_terms: List[str], doc: str, avg_len: float = 400,
                 k1: float = 1.5, b: float = 0.75) -> float:
@@ -2645,17 +2645,83 @@ def _bm25_score(query_terms: List[str], doc: str, avg_len: float = 400,
         score += idf * tf_norm
     return score
 
+def _is_document_access_query(query: str) -> bool:
+    q = (query or "").lower()
+    return any(t in q for t in (
+        "rag", "document", "documents", "doc ", "docs", "file", "files",
+        "uploaded", "upload", "processed", "indexed", "knowledge", "source"
+    ))
+
+async def _processed_document_rows(user_id: str, limit: int = 8) -> List[Dict]:
+    return await db_fetchall(
+        "SELECT id,original_name,file_size_bytes,chunk_count,uploaded_at,indexed_at "
+        "FROM documents WHERE user_id=? AND is_indexed=1 AND COALESCE(chunk_count,0)>0 "
+        "ORDER BY uploaded_at DESC LIMIT ?",
+        (user_id, limit))
+
+def _format_rag_document_status(docs: List[Dict]) -> str:
+    if not docs:
+        return (
+            "[RAG document status]\n"
+            "RAG is enabled, but this user has no processed documents available yet."
+        )
+    lines = [
+        "[RAG document status]",
+        f"RAG is enabled. {len(docs)} processed document(s) are available for this user.",
+        "If the user asks whether you can access uploaded documents, answer yes for these processed JAZZ documents. Do not claim you cannot access uploaded documents in JAZZ.",
+    ]
+    for d in docs:
+        lines.append(
+            f"- {d.get('original_name') or 'document'} "
+            f"({int(d.get('chunk_count') or 0)} chunks, uploaded {d.get('uploaded_at') or 'unknown'})"
+        )
+    return "\n".join(lines)
+
+async def _rag_sqlite_search(user_id: str, query: str, k: int = TOP_K_RETRIEVAL,
+                             recent: bool = False) -> List[str]:
+    rows = await db_fetchall(
+        "SELECT em.chunk_text,em.chunk_index,d.original_name,d.uploaded_at "
+        "FROM embeddings_meta em JOIN documents d ON d.id=em.document_id "
+        "WHERE em.user_id=? AND d.user_id=? AND d.is_indexed=1 AND COALESCE(d.chunk_count,0)>0 "
+        "ORDER BY d.uploaded_at DESC, em.chunk_index ASC LIMIT 600",
+        (user_id, user_id))
+    if not rows:
+        return []
+    terms = [
+        t for t in re.findall(r"[a-zA-Z0-9_]{3,}", (query or "").lower())
+        if t not in {"the", "and", "for", "you", "are", "can", "this", "that", "with", "from", "have", "using"}
+    ]
+    if recent or not terms or (_is_document_access_query(query) and len(terms) <= 2):
+        chosen = rows[:k]
+    else:
+        scored = []
+        for r in rows:
+            text = str(r.get("chunk_text") or "")
+            hay = (text + " " + str(r.get("original_name") or "")).lower()
+            score = sum(hay.count(t) for t in terms)
+            if score > 0:
+                scored.append((score, r))
+        chosen = [r for _, r in sorted(scored, key=lambda x: x[0], reverse=True)[:k]] or rows[:k]
+    return [
+        f"[Source: {r.get('original_name') or 'document'} | chunk {int(r.get('chunk_index') or 0) + 1}]\n{r.get('chunk_text') or ''}"
+        for r in chosen
+        if (r.get("chunk_text") or "").strip()
+    ]
+
 async def _rag_search(user_id: str, query: str, k: int = TOP_K_RETRIEVAL,
                       collection: str = "documents") -> List[str]:
     col = _get_collection(user_id, collection)
-    if not col: return []
+    if not col:
+        return await _rag_sqlite_search(user_id, query, k)
     try:
         cnt = col.count()
-        if cnt == 0: return []
+        if cnt == 0:
+            return await _rag_sqlite_search(user_id, query, k)
         res = col.query(query_texts=[query], n_results=min(k*2, cnt),
                         where={"user_id": user_id},
                         include=["documents","metadatas","distances"])
-        if not res or not res["documents"] or not res["documents"][0]: return []
+        if not res or not res["documents"] or not res["documents"][0]:
+            return await _rag_sqlite_search(user_id, query, k)
         docs   = res["documents"][0]
         metas  = res.get("metadatas",[None])[0] or [{}]*len(docs)
         dists  = res.get("distances",[None])[0] or [0.5]*len(docs)
@@ -2675,9 +2741,10 @@ async def _rag_search(user_id: str, query: str, k: int = TOP_K_RETRIEVAL,
         for c in fused[:RERANK_TOP_K]:
             fname = c["meta"].get("original_name", c["meta"].get("filename","document"))
             parts.append(f"[Source: {fname}]\n{c['text']}")
-        return parts
+        return parts or await _rag_sqlite_search(user_id, query, k)
     except Exception as e:
-        logger.warning("[RAG] search error: %s", e); return []
+        logger.warning("[RAG] search error: %s", e)
+        return await _rag_sqlite_search(user_id, query, k)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # §8  MEMORY
@@ -2832,10 +2899,19 @@ async def _build_context(session_id: str, user_id: str, new_msg: str,
 
     rag_context = ""
     if use_rag:
+        processed_docs = await _processed_document_rows(user_id)
+        sys_parts.append(_format_rag_document_status(processed_docs))
         chunks = await _rag_search(user_id, (new_msg or "")[:4000])
+        if not chunks and processed_docs and _is_document_access_query(new_msg or ""):
+            chunks = await _rag_sqlite_search(user_id, new_msg or "", TOP_K_RETRIEVAL, recent=True)
         if chunks:
             rag_str = "\n\n---\n\n".join(chunks[:RERANK_TOP_K])
-            rag_context = f"\n[Retrieved document context:]\n{rag_str}"
+            rag_context = (
+                "\n[Retrieved document context]\n"
+                "Use these processed JAZZ document excerpts when answering. "
+                "When relevant, mention the source filename.\n"
+                f"{rag_str}"
+            )
 
     # Rolling summary
     summary = await db_fetchone(

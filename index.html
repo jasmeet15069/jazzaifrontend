@@ -2963,7 +2963,7 @@ async function openToolsDrawer() {
     </div>
     <div style="display:grid;gap:14px">
       <div class="tool-grid">
-        ${toolCardHtml({ id:'rag', title:'RAG', desc:'Use uploaded knowledge and indexed docs.', icon:toolIconSvg('rag'), active:S.useRag })}
+        ${toolCardHtml({ id:'rag', title:'RAG', desc:'Use uploaded knowledge and processed docs.', icon:toolIconSvg('rag'), active:S.useRag })}
         ${toolCardHtml({ id:'web', title:'Web Search', desc:'Active by default for fresh answers.', icon:toolIconSvg('web'), active:S.useWeb })}
         ${toolCardHtml({ id:'plan', title:'Plan Mode', desc:'Break down bigger work before execution.', icon:toolIconSvg('plan'), active:S.planMode })}
         ${toolCardHtml({ id:'agent', title:'Tool Agent', desc:'Let JAZZ call tools when needed.', icon:toolIconSvg('agent'), active:S.agentMode })}
@@ -4860,7 +4860,7 @@ async function loadDocs() {
         <th></th>
       </tr></thead>
       <tbody>${d.documents.map(doc => {
-        const status = doc.is_indexed ? `<span class="badge badge-ok">✅ Indexed</span>` : doc.index_error ? `<span class="badge badge-err" title="${escAttr(doc.index_error)}">❌ Error</span>` : `<span class="badge badge-warn">⏳ Indexing</span>`;
+        const status = doc.is_indexed ? `<span class="badge badge-ok">✅ Processed</span>` : doc.index_error ? `<span class="badge badge-err" title="${escAttr(doc.index_error)}">❌ Error</span>` : `<span class="badge badge-warn">⏳ Processing</span>`;
         return `<tr style="border-bottom:1px solid #0d0d1a;font-size:13px">
           <td style="padding:10px 8px;font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📄 ${escHtml(doc.original_name)}</td>
           <td style="padding:10px 8px;text-align:right;color:#9090b0;font-family:'DM Mono',monospace;font-size:12px">${fmtSize(doc.file_size_bytes)}</td>
@@ -4881,8 +4881,8 @@ async function uploadDoc(file) {
   try {
     fill.style.width = '50%'; label.textContent = 'Processing…';
     await req('POST', '/documents/upload', fd, true);
-    fill.style.width = '100%'; label.textContent = 'Indexing…';
-    toast('Uploaded! Indexing in background…', 'ok');
+    fill.style.width = '100%'; label.textContent = 'Processing…';
+    toast('Uploaded! Processing in background…', 'ok');
     setTimeout(() => { prog.style.display = 'none'; fill.style.width = '0%'; loadDocs(); }, 1500);
   } catch(e) { prog.style.display = 'none'; toast(e.message, 'err'); }
 }
