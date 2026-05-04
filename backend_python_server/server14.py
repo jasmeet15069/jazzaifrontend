@@ -2084,6 +2084,10 @@ def _needs_thinking(text: str) -> bool:
 
 def _count_tokens(text: str) -> int: return math.ceil(len(text) / 4)
 
+LOCAL_JAZZ_MODEL_ID = "local-dolphin3-qwen25-05b"
+LOCAL_JAZZ_FAST_INPUT_TOKENS = int(os.getenv("LOCAL_JAZZ_FAST_INPUT_TOKENS") or "360")
+LOCAL_JAZZ_FAST_MAX_TOKENS = int(os.getenv("LOCAL_JAZZ_FAST_MAX_TOKENS") or "160")
+
 _MODEL_ALIASES = {
     "censored": "llama-3.3-70b-versatile",
     "fast": "llama-3.1-8b-instant",
@@ -2116,6 +2120,9 @@ _MODEL_ALIASES = {
 def _canonical_model_id(model_id: str) -> str:
     raw = (model_id or "llama-3.3-70b-versatile").strip()
     return _MODEL_ALIASES.get(raw) or _MODEL_ALIASES.get(raw.lower()) or raw
+
+def _is_local_jazz_model(model_id: str) -> bool:
+    return _canonical_model_id(model_id) == LOCAL_JAZZ_MODEL_ID
 
 def _model_tags(row: Dict[str, Any]) -> List[str]:
     return [str(t).lower() for t in _safe_json_loads(row.get("tags_json") or row.get("tags"), [])]
@@ -2458,6 +2465,7 @@ async def _llm_text_with_fallback(messages: List[Dict], model_id: str,
     previous = requested
     for idx, mid in enumerate(candidates):
         label = await _model_display_name(mid)
+        effective_max_tokens = min(max_tokens, LOCAL_JAZZ_FAST_MAX_TOKENS) if _is_local_jazz_model(mid) else max_tokens
         if idx == 0:
             events.append({"type":"tool_progress","tool":"model","label":f"Asking {label}..."})
         else:
@@ -2468,7 +2476,7 @@ async def _llm_text_with_fallback(messages: List[Dict], model_id: str,
                 "label":f"{prev_label} did not answer. Trying {label}..."
             })
         try:
-            text, resolved_id, provider_model = await _llm_text_once(messages, mid, max_tokens, temperature)
+            text, resolved_id, provider_model = await _llm_text_once(messages, mid, effective_max_tokens, temperature)
             if text and text.strip():
                 final_id = _canonical_model_id(resolved_id or mid)
                 final_label = await _model_display_name(final_id)
@@ -2711,6 +2719,8 @@ async def _context_input_budget(model_id: str) -> int:
 async def _model_request_input_budget(model_id: str) -> int:
     """Keep calls below provider/request TPM ceilings even when context windows are large."""
     mid = _canonical_model_id(model_id)
+    if _is_local_jazz_model(mid):
+        return max(192, min(768, LOCAL_JAZZ_FAST_INPUT_TOKENS))
     default_cap = int(os.getenv("MODEL_REQUEST_MAX_TOKENS") or "9000")
     if mid == "llama-3.1-8b-instant":
         default_cap = min(default_cap, 4200)
@@ -3003,6 +3013,13 @@ RESPONSE GUIDELINES:
 • For connector results, present data in clean tables or structured lists
 • For code, always include the language tag in code blocks"""
 
+_LOCAL_JAZZ_FAST_SYSTEM_PROMPT = (
+    "You are Jazz AI, a direct assistant. Answer in the user's language. "
+    "For greetings and simple questions, reply in one short natural answer. "
+    "Use provided tool, web, image, or document context when it is present. "
+    "Do not invent the user's name."
+)
+
 def _display_name_from_user_row(row: Optional[Dict[str, Any]]) -> str:
     if not row:
         return ""
@@ -3043,12 +3060,33 @@ async def _build_context(session_id: str, user_id: str, new_msg: str,
                           plan_mode: bool = False,
                           skill_context: str = "",
                           mcp_context: str = "") -> List[Dict]:
+    local_fast = _is_local_jazz_model(model_id)
     budget = await _model_request_input_budget(model_id)
-    sys_parts = [_SYSTEM_PROMPT, f"Today: {datetime.now(timezone.utc).strftime('%A, %B %d, %Y %H:%M UTC')}"]
+    sys_parts = (
+        [_LOCAL_JAZZ_FAST_SYSTEM_PROMPT]
+        if local_fast
+        else [_SYSTEM_PROMPT, f"Today: {datetime.now(timezone.utc).strftime('%A, %B %d, %Y %H:%M UTC')}"]
+    )
     user_row = await db_fetchone("SELECT email,full_name FROM users WHERE id=?", (user_id,))
-    sys_parts.append(_authenticated_user_context(user_row))
+    if local_fast:
+        user_name = _display_name_from_user_row(user_row)
+        sys_parts.append(
+            f"Current user name: {user_name}."
+            if user_name else
+            "Current user name is not provided; do not invent one."
+        )
+    else:
+        sys_parts.append(_authenticated_user_context(user_row))
     mems = await _get_memories(user_id)
-    if mems: sys_parts.append(_format_memories(mems))
+    if mems:
+        if local_fast:
+            compact = [
+                f"- {str(m.get('key') or '')[:48]}: {str(m.get('value') or '')[:120]}"
+                for m in mems[:3]
+            ]
+            sys_parts.append("[User memory]\n" + "\n".join(compact))
+        else:
+            sys_parts.append(_format_memories(mems))
 
     # Active connectors context
     sc_rows = await db_fetchall(
@@ -3075,7 +3113,12 @@ async def _build_context(session_id: str, user_id: str, new_msg: str,
         sys_parts.append(mcp_context)
 
     rag_context = ""
-    if use_rag:
+    use_rag_now = bool(use_rag) and (
+        not local_fast
+        or bool(skill_context)
+        or _is_document_access_query(new_msg or "")
+    )
+    if use_rag_now:
         processed_docs = await _processed_document_rows(user_id)
         sys_parts.append(_format_rag_document_status(processed_docs))
         chunks = await _rag_search(user_id, (new_msg or "")[:4000])
@@ -3094,7 +3137,7 @@ async def _build_context(session_id: str, user_id: str, new_msg: str,
     summary = await db_fetchone(
         "SELECT summary_text FROM summaries WHERE session_id=? ORDER BY created_at DESC LIMIT 1",
         (session_id,))
-    if summary:
+    if summary and not local_fast:
         sys_parts.append(f"[Conversation Summary]\n{summary['summary_text']}")
 
     system_content = "\n\n".join(sys_parts) + rag_context
@@ -3116,9 +3159,10 @@ async def _build_context(session_id: str, user_id: str, new_msg: str,
             budget -= _count_tokens(notice)
         budget -= _count_tokens(safe_new_msg)
 
+    history_limit = 8 if local_fast else 60
     history = await db_fetchall(
         "SELECT role,content FROM chat_history WHERE session_id=? AND is_hidden=0 "
-        "ORDER BY created_at DESC LIMIT 60", (session_id,))
+        "ORDER BY created_at DESC LIMIT ?", (session_id, history_limit))
     window = []
     for h in history:
         tok = _count_tokens(h["content"])
