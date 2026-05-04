@@ -22,6 +22,7 @@ from __future__ import annotations
 
 # ─── stdlib ───────────────────────────────────────────────────────────────────
 import asyncio, base64, csv, hashlib, hmac, html as html_lib, io, json, logging, math, os, platform, socket
+import smtplib, ssl
 import re, secrets, shlex, shutil, subprocess, sys, tempfile, time, traceback, uuid
 import urllib.parse, urllib.request, urllib.error
 import zipfile
@@ -29,6 +30,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional, Set, Tuple
 
@@ -229,6 +231,9 @@ _RUNTIME_ENV_KEYS = [
     "EMAIL_VERIFICATION_RETURN_LINK",
     "PASSWORD_RESET_EXPIRE_MINUTES", "PASSWORD_RESET_RETURN_LINK",
     "BCRYPT_ROUNDS",
+    "EMAIL_FROM", "EMAIL_FROM_NAME", "RESEND_API_KEY",
+    "SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD",
+    "SMTP_FROM", "SMTP_USE_TLS", "SMTP_USE_SSL",
 ]
 _RUNTIME_ENV_DEFAULTS = {
     "ADMIN_EMAIL": "jasmeet.15069@gmail.com",
@@ -238,10 +243,20 @@ _RUNTIME_ENV_DEFAULTS = {
     "TTS_VOICE": "Fritz-PlayAI",
     "REQUIRE_EMAIL_VERIFICATION": "1",
     "EMAIL_VERIFICATION_EXPIRE_HOURS": "24",
-    "EMAIL_VERIFICATION_RETURN_LINK": "1",
+    "EMAIL_VERIFICATION_RETURN_LINK": "0",
     "PASSWORD_RESET_EXPIRE_MINUTES": "30",
-    "PASSWORD_RESET_RETURN_LINK": "1",
+    "PASSWORD_RESET_RETURN_LINK": "0",
     "BCRYPT_ROUNDS": "10",
+    "EMAIL_FROM": "",
+    "EMAIL_FROM_NAME": "JAZZ AI",
+    "RESEND_API_KEY": "",
+    "SMTP_HOST": "",
+    "SMTP_PORT": "587",
+    "SMTP_USERNAME": "",
+    "SMTP_PASSWORD": "",
+    "SMTP_FROM": "",
+    "SMTP_USE_TLS": "1",
+    "SMTP_USE_SSL": "0",
 }
 
 def _env_file_path() -> Path:
@@ -1133,8 +1148,7 @@ def _email_verification_required() -> bool:
     return _env_bool("REQUIRE_EMAIL_VERIFICATION", True)
 
 def _email_verification_return_link() -> bool:
-    # Keep the local/live install usable even when SMTP is not configured yet.
-    return _env_bool("EMAIL_VERIFICATION_RETURN_LINK", True)
+    return _env_bool("EMAIL_VERIFICATION_RETURN_LINK", False)
 
 def _email_verification_expiry_hours() -> int:
     return _env_int("EMAIL_VERIFICATION_EXPIRE_HOURS", 24, 1, 168)
@@ -1143,8 +1157,7 @@ def _password_reset_expiry_minutes() -> int:
     return _env_int("PASSWORD_RESET_EXPIRE_MINUTES", 30, 5, 1440)
 
 def _password_reset_return_link() -> bool:
-    # Like verification links, keep the self-hosted install usable without SMTP.
-    return _env_bool("PASSWORD_RESET_RETURN_LINK", True)
+    return _env_bool("PASSWORD_RESET_RETURN_LINK", False)
 
 def _supabase_public_config() -> Dict[str, Any]:
     url = os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL") or ""
@@ -1206,15 +1219,128 @@ async def _create_email_verification_link(user_id: str, email: str, request: Opt
     )
     return f"{_app_base_url(request)}/auth/verify-email?token={urllib.parse.quote(raw)}"
 
-def _verification_response(email: str, link: str) -> Dict[str, Any]:
+def _mail_sender_from() -> str:
+    raw = (
+        os.getenv("SMTP_FROM")
+        or os.getenv("EMAIL_FROM")
+        or os.getenv("SMTP_USERNAME")
+        or os.getenv("ADMIN_EMAIL")
+        or "no-reply@jazzai.online"
+    ).strip()
+    name = (os.getenv("EMAIL_FROM_NAME") or "JAZZ AI").strip()
+    if name and "<" not in raw:
+        return f"{name} <{raw}>"
+    return raw
+
+def _send_email_sync(to_email: str, subject: str, text: str, html: str = "") -> Dict[str, Any]:
+    to_email = _validated_email(to_email)
+    sender = _mail_sender_from()
+    resend_key = (os.getenv("RESEND_API_KEY") or "").strip()
+    if resend_key:
+        payload = {
+            "from": sender,
+            "to": [to_email],
+            "subject": subject,
+            "text": text,
+        }
+        if html:
+            payload["html"] = html
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {resend_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            body = resp.read().decode("utf-8", "ignore")
+            return {"provider": "resend", "status": resp.status, "body": body[:300]}
+
+    smtp_host = (os.getenv("SMTP_HOST") or "").strip()
+    if smtp_host:
+        smtp_port = _env_int("SMTP_PORT", 587, 1, 65535)
+        username = (os.getenv("SMTP_USERNAME") or "").strip()
+        password = os.getenv("SMTP_PASSWORD") or ""
+        msg = EmailMessage()
+        msg["From"] = sender
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.set_content(text)
+        if html:
+            msg.add_alternative(html, subtype="html")
+        use_ssl = _env_bool("SMTP_USE_SSL", False)
+        use_tls = _env_bool("SMTP_USE_TLS", not use_ssl)
+        if use_ssl:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=20, context=ssl.create_default_context()) as server:
+                if username:
+                    server.login(username, password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+                if use_tls:
+                    server.starttls(context=ssl.create_default_context())
+                if username:
+                    server.login(username, password)
+                server.send_message(msg)
+        return {"provider": "smtp", "status": "sent"}
+
+    raise RuntimeError("Email delivery is not configured. Set RESEND_API_KEY or SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD.")
+
+async def _send_email_async(to_email: str, subject: str, text: str, html: str = "") -> Dict[str, Any]:
+    return await asyncio.get_running_loop().run_in_executor(
+        _executor, _send_email_sync, to_email, subject, text, html
+    )
+
+async def _send_verification_email(email: str, link: str) -> Dict[str, Any]:
+    subject = "Verify your JAZZ AI account"
+    text = (
+        "Welcome to JAZZ AI.\n\n"
+        "Verify your email address with this secure link:\n"
+        f"{link}\n\n"
+        f"This link expires in {_email_verification_expiry_hours()} hours."
+    )
+    html = (
+        "<div style='font-family:Arial,sans-serif;line-height:1.55;color:#111'>"
+        "<h2>Verify your JAZZ AI account</h2>"
+        "<p>Click the button below to verify your email address.</p>"
+        f"<p><a href='{html_lib.escape(link)}' style='display:inline-block;background:#7c6ff7;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:700'>Verify email</a></p>"
+        f"<p style='color:#555;font-size:13px'>This link expires in {_email_verification_expiry_hours()} hours.</p>"
+        "</div>"
+    )
+    return await _send_email_async(email, subject, text, html)
+
+async def _send_password_reset_email(email: str, link: str) -> Dict[str, Any]:
+    subject = "Reset your JAZZ AI password"
+    text = (
+        "Reset your JAZZ AI password with this secure link:\n"
+        f"{link}\n\n"
+        f"This link expires in {_password_reset_expiry_minutes()} minutes."
+    )
+    html = (
+        "<div style='font-family:Arial,sans-serif;line-height:1.55;color:#111'>"
+        "<h2>Reset your JAZZ AI password</h2>"
+        "<p>Click the button below to choose a new password.</p>"
+        f"<p><a href='{html_lib.escape(link)}' style='display:inline-block;background:#7c6ff7;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:700'>Reset password</a></p>"
+        f"<p style='color:#555;font-size:13px'>This link expires in {_password_reset_expiry_minutes()} minutes.</p>"
+        "</div>"
+    )
+    return await _send_email_async(email, subject, text, html)
+
+def _verification_response(email: str, link: str, email_sent: bool, delivery_error: str = "") -> Dict[str, Any]:
     resp: Dict[str, Any] = {
         "ok": True,
         "verification_required": True,
         "email": email,
-        "message": "Verification link created. Open it, then sign in.",
+        "email_sent": email_sent,
+        "message": "Verification email sent. Check your inbox, then sign in." if email_sent else "Verification email could not be sent because email delivery is not configured.",
     }
     if _email_verification_return_link():
         resp["verification_link"] = link
+        resp["dev_link"] = True
+    if delivery_error:
+        resp["delivery_error"] = delivery_error
     return resp
 
 async def _create_password_reset_link(user_id: str, email: str, request: Optional[Request] = None) -> str:
@@ -1232,14 +1358,18 @@ async def _create_password_reset_link(user_id: str, email: str, request: Optiona
     )
     return f"{_app_base_url(request)}/?reset_token={urllib.parse.quote(raw)}"
 
-def _password_reset_response(email: str, link: str = "") -> Dict[str, Any]:
+def _password_reset_response(email: str, link: str = "", email_sent: bool = False, delivery_error: str = "") -> Dict[str, Any]:
     resp: Dict[str, Any] = {
         "ok": True,
-        "message": "If that account exists, a reset link has been created.",
+        "email_sent": email_sent,
+        "message": "If that account exists, a reset email has been sent.",
     }
     if link and _password_reset_return_link():
         resp["reset_link"] = link
+        resp["dev_link"] = True
         resp["email"] = email
+    if delivery_error:
+        resp["delivery_error"] = delivery_error
     return resp
 
 async def _reset_password_by_token(raw_token: str, new_password: str) -> str:
@@ -5909,8 +6039,14 @@ async def auth_register(request: Request, body: AuthIn):
     )
     if _email_verification_required():
         link = await _create_email_verification_link(uid, email, request)
-        logger.info("[AUTH] Verification link for %s: %s", email, link)
-        return _verification_response(email, link)
+        try:
+            delivery = await _send_verification_email(email, link)
+            logger.info("[AUTH] Verification email sent for %s via %s", email, delivery.get("provider"))
+            return _verification_response(email, link, True)
+        except Exception as e:
+            logger.error("[AUTH] Verification email failed for %s: %s", email, e)
+            logger.info("[AUTH] Verification link for %s: %s", email, link)
+            return _verification_response(email, link, False, str(e))
     raw = f"jzr_{secrets.token_urlsafe(48)}"; h = _hash_token(raw)
     exp = (datetime.now(timezone.utc)+timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)).isoformat()
     await db_execute("INSERT INTO refresh_tokens(id,user_id,token_hash,expires_at,created_at) VALUES(?,?,?,?,?)",
@@ -5933,8 +6069,14 @@ async def auth_resend_verification(request: Request, body: EmailOnlyIn):
     if int(user.get("is_verified") or 0):
         return {"ok": True, "already_verified": True, "message": "Email is already verified. You can sign in."}
     link = await _create_email_verification_link(user["id"], email, request)
-    logger.info("[AUTH] Verification link for %s: %s", email, link)
-    return _verification_response(email, link)
+    try:
+        delivery = await _send_verification_email(email, link)
+        logger.info("[AUTH] Verification email sent for %s via %s", email, delivery.get("provider"))
+        return _verification_response(email, link, True)
+    except Exception as e:
+        logger.error("[AUTH] Verification email failed for %s: %s", email, e)
+        logger.info("[AUTH] Verification link for %s: %s", email, link)
+        return _verification_response(email, link, False, str(e))
 
 @app.post("/auth/forgot-password")
 async def auth_forgot_password(request: Request, body: EmailOnlyIn):
@@ -5943,8 +6085,14 @@ async def auth_forgot_password(request: Request, body: EmailOnlyIn):
     if not user or not int(user.get("is_active") or 0):
         return _password_reset_response(email)
     link = await _create_password_reset_link(user["id"], email, request)
-    logger.info("[AUTH] Password reset link for %s: %s", email, link)
-    return _password_reset_response(email, link)
+    try:
+        delivery = await _send_password_reset_email(email, link)
+        logger.info("[AUTH] Password reset email sent for %s via %s", email, delivery.get("provider"))
+        return _password_reset_response(email, link, True)
+    except Exception as e:
+        logger.error("[AUTH] Password reset email failed for %s: %s", email, e)
+        logger.info("[AUTH] Password reset link for %s: %s", email, link)
+        return _password_reset_response(email, link, False, str(e))
 
 @app.get("/auth/reset-password")
 async def auth_reset_password_page(token: str = ""):

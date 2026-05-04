@@ -1366,14 +1366,14 @@ function setAuthError(msg) {
   if (okEl) okEl.style.display = 'none';
   if (errEl) { errEl.textContent = msg || 'Something went wrong'; errEl.style.display = 'block'; }
 }
-function setAuthSuccess(msg, link) {
+function setAuthSuccess(msg, link, linkLabel = 'Open link') {
   const errEl = document.getElementById('auth-error');
   const okEl = document.getElementById('auth-success');
   if (errEl) errEl.style.display = 'none';
   if (!okEl) return;
   let html = escHtml(msg || 'Done');
   if (link) {
-    html += `<div style="margin-top:10px"><a href="${escAttr(link)}" target="_blank" rel="noopener" style="color:#34d399;font-weight:700;text-decoration:none">Open verification link</a></div>`;
+    html += `<div style="margin-top:10px"><a href="${escAttr(link)}" target="_blank" rel="noopener" style="color:#34d399;font-weight:700;text-decoration:none">${escHtml(linkLabel)}</a></div>`;
   }
   okEl.innerHTML = html;
   okEl.style.display = 'block';
@@ -1422,7 +1422,11 @@ async function resendVerification() {
   try {
     await resolveApiBase();
     const d = await post('/auth/resend-verification', { email });
-    setAuthSuccess(d.message || 'Verification link created. Open it, then sign in.', d.verification_link);
+    if (d.email_sent === false) {
+      setAuthError(d.message || 'Verification email could not be sent. Ask the admin to configure email delivery.');
+      return;
+    }
+    setAuthSuccess(d.message || 'Verification email sent. Check your inbox, then sign in.', d.dev_link ? d.verification_link : '', 'Open dev verification link');
   } catch(e) {
     setAuthError(e.message);
   } finally {
@@ -1436,7 +1440,11 @@ async function forgotPassword() {
   try {
     await resolveApiBase();
     const d = await post('/auth/forgot-password', { email });
-    setAuthSuccess(d.message || 'If that account exists, a reset link has been created.', d.reset_link);
+    if (d.delivery_error) {
+      setAuthError('Password reset email could not be sent. Ask the admin to configure email delivery.');
+      return;
+    }
+    setAuthSuccess(d.message || 'If that account exists, a reset email has been sent.', d.dev_link ? d.reset_link : '', 'Open dev reset link');
   } catch(e) {
     setAuthError(e.message);
   } finally {
@@ -1514,7 +1522,11 @@ async function doAuth() {
       document.getElementById('auth-email').value = form.email;
       document.getElementById('auth-password').value = '';
       document.getElementById('auth-resend-btn').style.display = 'block';
-      setAuthSuccess(d.message || 'Verification link created. Open it, then sign in.', d.verification_link);
+      if (d.email_sent === false) {
+        setAuthError(d.message || 'Verification email could not be sent. Ask the admin to configure email delivery.');
+        return;
+      }
+      setAuthSuccess(d.message || 'Verification email sent. Check your inbox, then sign in.', d.dev_link ? d.verification_link : '', 'Open dev verification link');
       return;
     }
     S.token = d.access_token; S.refresh = d.refresh_token; S.user = d.user; save();
