@@ -407,7 +407,7 @@ DEFAULT_DB_MODELS = {
 
 IMAGE_TO_TEXT_MODEL_ID = "hf-router-qwen-qwen2-5-vl-72b-instruct-ovhcloud"
 IMAGE_TO_TEXT_MODEL_NAME = "Qwen/Qwen2.5-VL-72B-Instruct:ovhcloud"
-DEFAULT_TEXT_MODEL_ID = "dolphin-mistral-24b-venice-hf"
+DEFAULT_TEXT_MODEL_ID = "local-dolphin3-qwen25-05b"
 
 _PROVIDER_DEFAULTS: Dict[str,str] = {
     "groq":        "https://api.groq.com/openai/v1",
@@ -2087,8 +2087,11 @@ def _count_tokens(text: str) -> int: return math.ceil(len(text) / 4)
 _MODEL_ALIASES = {
     "censored": "llama-3.3-70b-versatile",
     "fast": "llama-3.1-8b-instant",
-    "uncensored": "dolphin-mistral-24b-venice-hf",
-    "dolphin": "dolphin-mistral-24b-venice-hf",
+    "uncensored": "local-dolphin3-qwen25-05b",
+    "dolphin": "local-dolphin3-qwen25-05b",
+    "jazz-ai": "local-dolphin3-qwen25-05b",
+    "jazz": "local-dolphin3-qwen25-05b",
+    "local-dolphin": "local-dolphin3-qwen25-05b",
     "hf-dolphin": "dolphin-mistral-24b-venice-hf",
     "venice": "dolphin-mistral-24b-venice-hf",
     "dolphin-venice": "dolphin-mistral-24b-venice-hf",

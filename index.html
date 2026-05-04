@@ -1146,8 +1146,8 @@ const SIDEBAR_FEATURES = [
 ];
 const WORKSPACE_TOOL_FEATURE_KEYS = new Set(['documents','memory','connectors','mcp','livy','apikeys']);
 const SIDEBAR_FEATURE_BY_PAGE = Object.fromEntries(SIDEBAR_FEATURES.map(f => [f.page, f]));
-const DEFAULT_MODEL_ID = 'dolphin-mistral-24b-venice-hf';
-const MODEL_DEFAULT_VERSION = 'dolphin-venice-hf-token-20260428';
+const DEFAULT_MODEL_ID = 'local-dolphin3-qwen25-05b';
+const MODEL_DEFAULT_VERSION = 'jazz-ai-local-uncensored-20260505';
 
 function localSidebarFeatureRow(f, isEnabled = true) {
   return { feature_key:f.key, page_key:f.page, display_name:f.label, icon:f.icon, is_enabled:isEnabled };
@@ -1177,6 +1177,7 @@ const S = {
   modelId: DEFAULT_MODEL_ID, useRag: true, useWeb: true, planMode: false, agentMode: false,
   notifications: [], notifCount: 0,
   models: [
+    { id:'local-dolphin3-qwen25-05b', label:'Jazz AI', censored:false, tags:['local','uncensored','default'] },
     { id:'llama-3.3-70b-versatile', label:'Llama 3.3 70B', censored:true, tags:[] },
     { id:'dolphin-mistral-24b-venice-hf', label:'Dolphin Mistral 24B Venice (HF)', censored:false, tags:['huggingface','featherless-ai','protected'] },
     { id:'dolphin-3.0-llama-3.1-8b', label:'Dolphin 3.0 Llama 3.1 8B (HF)', censored:false, tags:['huggingface','protected'] },
@@ -2430,6 +2431,7 @@ function selectModel(id) {
 // Cost-per-million-tokens estimates (input, output) in USD
 // Groq free-tier models are $0, HF/Ollama approximations included
 const MODEL_COST_PER_M = {
+  'local-dolphin3-qwen25-05b':     [0.00, 0.00],
   'llama-3.3-70b-versatile':       [0.59, 0.79],
   'llama-3.1-8b-instant':          [0.05, 0.08],
   'dolphin-3.0-llama-3.1-8b':      [0.00, 0.00],
