@@ -1463,6 +1463,24 @@ function checkResetPasswordRoute() {
     openResetPasswordModal(token);
   } catch(e) {}
 }
+function routeSessionId() {
+  try {
+    const match = (window.location.pathname || '').match(/^\/c\/([^/?#]+)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  } catch(e) {
+    return '';
+  }
+}
+function setChatRoute(sessionId, { replace = false } = {}) {
+  try {
+    const cleanId = sessionId ? String(sessionId).trim() : '';
+    const target = cleanId ? `/c/${encodeURIComponent(cleanId)}` : '/';
+    const current = (window.location.pathname || '/') + (window.location.search || '') + (window.location.hash || '');
+    if (current === target) return;
+    const state = { jazzPage:'chat', sessionId: cleanId || null };
+    window.history[replace ? 'replaceState' : 'pushState'](state, '', target);
+  } catch(e) {}
+}
 function openResetPasswordModal(token) {
   openModal(`<div class="modal" style="width:min(440px,calc(100vw - 24px))">
     <button class="modal-close" onclick="closeModal()">×</button>
@@ -1656,9 +1674,11 @@ function compareModelsByIntelligence(a, b) {
 }
 
 function showApp({ startFreshChat = true } = {}) {
+  const deepSessionId = routeSessionId();
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
-  if (startFreshChat) S.forceFreshChat = true;
+  if (deepSessionId) S.forceFreshChat = false;
+  else if (startFreshChat) S.forceFreshChat = true;
   if (S.user) {
     document.getElementById('user-avatar').textContent = (S.user.full_name || S.user.email || '?')[0].toUpperCase();
     document.getElementById('user-name').textContent = S.user.full_name || S.user.email;
@@ -1671,7 +1691,10 @@ function showApp({ startFreshChat = true } = {}) {
   loadUsage();
   connectWS();
   loadSidebarFeatureAccess();
-  loadModels({ preserveSelection:true }).then(() => { startModelHealthChecks(); navigate('chat'); });
+  loadModels({ preserveSelection:true }).then(() => {
+    startModelHealthChecks();
+    navigate('chat', deepSessionId ? { sessionId: deepSessionId, _fromUrl:true } : {});
+  });
   loadConnectedApps();
   renderThemeToggle();
   updateFilesBadge();
@@ -1997,7 +2020,7 @@ async function chat({ sessionId } = {}) {
   updateToolsCount();
   updateFilesBadge();
   await loadSessions();
-  if (sessionId) { S.forceFreshChat = false; loadSession(sessionId); }
+  if (sessionId) { S.forceFreshChat = false; loadSession(sessionId, { pushUrl:false }); }
   else if (S.forceFreshChat) {
     S.forceFreshChat = false;
     S.activeSession = null; S.messages = []; renderSessionList(); renderMessages([]);
@@ -2434,8 +2457,9 @@ function renderSessionList() {
     </div>`).join('')}
   `).join('');
 }
-async function loadSession(id) {
+async function loadSession(id, { pushUrl = true } = {}) {
   S.activeSession = id; renderSessionList();
+  if (pushUrl) setChatRoute(id);
   try {
     const d = await get(`/sessions/${id}/messages?limit=80`);
     const sess = S.sessions.find(s => s.id === id);
@@ -2447,7 +2471,18 @@ async function loadSession(id) {
     renderMessages(S.messages, d.summaries || []);
     if (d.context) updateContextMeter(d.context); else loadContextStatus();
     scrollBottom();
-  } catch(e) { toast('Failed to load session', 'err'); }
+  } catch(e) {
+    toast('Failed to load session', 'err');
+    if (S.activeSession === id) {
+      S.activeSession = null;
+      renderSessionList();
+      renderMessages([]);
+      const t = document.getElementById('chat-title'); if (t) t.textContent = 'New Chat';
+      const meta = document.getElementById('chat-meta'); if (meta) meta.textContent = 'Fresh chat';
+      updateContextMeter({ percent_used:0, percent_left:100, used_tokens:0, context_limit_tokens:(S.models.find(m=>m.id===S.modelId)?.ctx||32768), summary_count:0, hidden_messages:0, auto_compact_threshold_percent:90 });
+    }
+    setChatRoute(null, { replace:true });
+  }
 }
 function renderToolTimeline(events = []) {
   if (!events || !events.length) return '';
@@ -2940,8 +2975,9 @@ function addCopyBtns() {
   });
 }
 function scrollBottom() { const el = document.getElementById('messages'); if (el) el.scrollTop = el.scrollHeight; }
-async function newSession() {
+async function newSession({ pushUrl = true } = {}) {
   S.forceFreshChat = true;
+  if (pushUrl) setChatRoute(null);
   if (S.page !== 'chat' || !document.getElementById('messages')) { navigate('chat'); return; }
   S.activeSession = null; S.messages = []; S.chatQueue = []; S.queueRunning = false;
   clearChatSearch();
@@ -3490,7 +3526,7 @@ async function _sendChatInternal(msg, attachments = []) {
       const timeout = setTimeout(() => { if (!started) { es.close(); resolve(S.stopRequested || requestCompleted); } }, 6000);
       es.onmessage = e => {
         let d; try { d = JSON.parse(e.data); } catch { return; }
-        if (d.type === 'start') { clearTimeout(timeout); started = true; if (d.model_id) { activeModelId = d.model_id; setModelHealth(d.model_id, 'checking', 'stream started'); updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; loadContextStatus(); } resolve(true); }
+        if (d.type === 'start') { clearTimeout(timeout); started = true; if (d.model_id) { activeModelId = d.model_id; setModelHealth(d.model_id, 'checking', 'stream started'); updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; setChatRoute(d.session_id); loadContextStatus(); } resolve(true); }
         if (d.type === 'thinking_content') _onThinking(d.content);
         if (['tool_start','tool_progress','tool_result','tool_error','skill_loaded','model_switch'].includes(d.type)) _onToolEvent(d);
         if (d.type === 'delta') _onDelta(d.content);
@@ -3519,7 +3555,7 @@ async function _sendChatInternal(msg, attachments = []) {
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           let d; try { d = JSON.parse(line.slice(6)); } catch { continue; }
-          if (d.type === 'start') { if (d.model_id) { activeModelId = d.model_id; setModelHealth(d.model_id, 'checking', 'stream started'); updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; loadContextStatus(); } }
+          if (d.type === 'start') { if (d.model_id) { activeModelId = d.model_id; setModelHealth(d.model_id, 'checking', 'stream started'); updateModelPill(); } if (d.session_id) { S.activeSession = d.session_id; setChatRoute(d.session_id); loadContextStatus(); } }
           if (d.type === 'thinking_content') _onThinking(d.content);
           if (['tool_start','tool_progress','tool_result','tool_error','skill_loaded','model_switch'].includes(d.type)) _onToolEvent(d);
           if (d.type === 'delta') _onDelta(d.content);
@@ -3618,6 +3654,7 @@ async function archiveSession(e, id) {
     if (S.activeSession === id) {
       S.activeSession = null;
       S.forceFreshChat = true;
+      setChatRoute(null);
       renderMessages([]);
       navigate('chat');
     }
@@ -3628,7 +3665,7 @@ async function archiveSession(e, id) {
 }
 async function deleteSession(e, id) {
   e.stopPropagation(); if (!confirm('Delete this session?')) return;
-  try { await del('/sessions/'+id); if (S.activeSession===id) { S.activeSession=null; renderMessages([]); } loadSessions(); toast('Deleted','ok'); } catch(err) { toast(err.message,'err'); }
+  try { await del('/sessions/'+id); if (S.activeSession===id) { S.activeSession=null; setChatRoute(null); renderMessages([]); } loadSessions(); toast('Deleted','ok'); } catch(err) { toast(err.message,'err'); }
 }
 async function exportSession() {
   if (!S.activeSession) return;
@@ -5579,6 +5616,7 @@ async function archiveAllChats() {
     const d = await post('/sessions/archive-all', {});
     S.activeSession = null;
     S.forceFreshChat = true;
+    setChatRoute(null);
     renderMessages([]);
     await loadSessions();
     await loadArchivedChats(false);
@@ -7264,6 +7302,21 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeModal(); closeModelDropdown(); const pal = document.getElementById('slash-palette'); if (pal) pal.style.display = 'none'; }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement?.id === 'auth-password') doAuth(); });
+window.addEventListener('popstate', () => {
+  if (!S.token || !S.user) return;
+  const sid = routeSessionId();
+  if (sid) {
+    if (S.page !== 'chat' || !document.getElementById('messages')) navigate('chat', { sessionId:sid, _fromUrl:true, _fromBack:true });
+    else loadSession(sid, { pushUrl:false });
+  } else {
+    if (S.page !== 'chat' || !document.getElementById('messages')) {
+      S.forceFreshChat = true;
+      navigate('chat', { _fromUrl:true, _fromBack:true });
+    } else {
+      newSession({ pushUrl:false });
+    }
+  }
+});
 
 // ═══════════════════════════════════════════════
 // BOOTSTRAP

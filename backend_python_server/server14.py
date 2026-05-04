@@ -5994,8 +5994,7 @@ async def _request_logger(request: Request, call_next):
 
 FRONTEND_PATH = Path("index.html")
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_frontend():
+def _serve_frontend_response():
     if FRONTEND_PATH.exists():
         return FileResponse(
             FRONTEND_PATH,
@@ -6006,6 +6005,14 @@ async def serve_frontend():
         "<h1>JAZZ AI Server is Running</h1>",
         headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
     )
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_frontend():
+    return _serve_frontend_response()
+
+@app.get("/c/{session_id:path}", response_class=HTMLResponse)
+async def serve_chat_session(session_id: str):
+    return _serve_frontend_response()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # §22  AUTH ROUTES
