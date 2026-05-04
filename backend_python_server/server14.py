@@ -193,6 +193,7 @@ RAZORPAY_PREMIUM_MONTHLY= int(os.getenv("RAZORPAY_PREMIUM_MONTHLY_AMOUNT", "9990
 RAZORPAY_ENT_MONTHLY    = int(os.getenv("RAZORPAY_ENTERPRISE_MONTHLY_AMOUNT", "499900") or "499900")
 
 APP_BASE_URL       = os.getenv("APP_BASE_URL", "https://imperceptibly-hymnlike-leesa.ngrok-free.dev")
+AUTH_LINK_BASE_URL = os.getenv("AUTH_LINK_BASE_URL") or os.getenv("PUBLIC_APP_URL", "https://www.jazzai.online")
 LIVEKIT_URL        = os.getenv("LIVEKIT_URL", "")
 LIVEKIT_API_KEY    = os.getenv("LIVEKIT_API_KEY", "")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "")
@@ -223,7 +224,8 @@ _RUNTIME_ENV_KEYS = [
     "CLICKUP_CLIENT_ID", "CLICKUP_CLIENT_SECRET",
     "STRIPE_SECRET_KEY", "RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_CURRENCY",
     "RAZORPAY_PRO_MONTHLY_AMOUNT", "RAZORPAY_PREMIUM_MONTHLY_AMOUNT", "RAZORPAY_ENTERPRISE_MONTHLY_AMOUNT",
-    "APP_BASE_URL", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET",
+    "APP_BASE_URL", "AUTH_LINK_BASE_URL", "PUBLIC_APP_URL",
+    "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET",
     "TTS_VOICE", "LIVY_URL", "LIVY_USER", "LIVY_PASSWORD",
     "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
     "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY",
@@ -239,6 +241,8 @@ _RUNTIME_ENV_DEFAULTS = {
     "ADMIN_EMAIL": "jasmeet.15069@gmail.com",
     "ADMIN_PASSWORD": "Acx@POWER@12345jassi789",
     "APP_BASE_URL": "https://imperceptibly-hymnlike-leesa.ngrok-free.dev",
+    "AUTH_LINK_BASE_URL": "https://www.jazzai.online",
+    "PUBLIC_APP_URL": "https://www.jazzai.online",
     "LIVY_URL": "http://localhost:8998",
     "TTS_VOICE": "Fritz-PlayAI",
     "REQUIRE_EMAIL_VERIFICATION": "1",
@@ -1217,7 +1221,7 @@ async def _create_email_verification_link(user_id: str, email: str, request: Opt
         " VALUES(?,?,?,?,?,?)",
         (_new_id(), user_id, _hash_token(raw), email, expires_at, now),
     )
-    return f"{_app_base_url(request)}/auth/verify-email?token={urllib.parse.quote(raw)}"
+    return f"{_auth_link_base_url(request)}/auth/verify-email?token={urllib.parse.quote(raw)}"
 
 def _mail_sender_from() -> str:
     raw = (
@@ -1356,7 +1360,7 @@ async def _create_password_reset_link(user_id: str, email: str, request: Optiona
         " VALUES(?,?,?,?,?,?)",
         (_new_id(), user_id, _hash_token(raw), email, expires_at, now),
     )
-    return f"{_app_base_url(request)}/?reset_token={urllib.parse.quote(raw)}"
+    return f"{_auth_link_base_url(request)}/?reset_token={urllib.parse.quote(raw)}"
 
 def _password_reset_response(email: str, link: str = "", email_sent: bool = False, delivery_error: str = "") -> Dict[str, Any]:
     resp: Dict[str, Any] = {
@@ -2898,6 +2902,13 @@ def _app_base_url(request: Optional[Request] = None) -> str:
     if request is not None:
         return str(request.base_url).rstrip("/")
     return "https://imperceptibly-hymnlike-leesa.ngrok-free.dev"
+
+def _auth_link_base_url(request: Optional[Request] = None) -> str:
+    """Return the public website URL used in verification/password emails."""
+    configured = (os.getenv("AUTH_LINK_BASE_URL") or os.getenv("PUBLIC_APP_URL") or AUTH_LINK_BASE_URL or "").strip()
+    if configured:
+        return configured.rstrip("/")
+    return _app_base_url(request)
 
 def _oauth_callback_connector_id(app_id: str) -> str:
     # Google OAuth clients usually share one redirect URI for all Google APIs.
