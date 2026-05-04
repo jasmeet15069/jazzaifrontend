@@ -43,6 +43,7 @@ tailwind.config={theme:{extend:{colors:{j:{bg:'#07070f',s:'#0c0c1a',s2:'#111124'
   --radius-sm: 6px;
   --radius:    10px;
   --radius-lg: 14px;
+  --top-banner-offset: 0px;
 }
 
 /* ── Light Mode overrides ── */
@@ -78,10 +79,13 @@ body:not(.light) #hljs-theme-light{display:none}
 ::-webkit-scrollbar-thumb:hover{background:var(--b3)}
 
 /* ── Layout ── */
-#app{display:flex;height:100dvh;min-height:100dvh}
-.sidebar{width:248px;min-width:248px;background:#0c0c1a;border-right:1px solid #1a1a30;display:flex;flex-direction:column;height:100dvh;transition:transform .25s ease;z-index:50}
+#app{display:flex;height:calc(100dvh - var(--top-banner-offset));min-height:calc(100dvh - var(--top-banner-offset));min-height:0}
+.sidebar{width:248px;min-width:248px;background:#0c0c1a;border-right:1px solid #1a1a30;display:flex;flex-direction:column;height:calc(100dvh - var(--top-banner-offset));transition:transform .25s ease;z-index:50;min-height:0}
 .sidebar-middle{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column}
-.main{flex:1;overflow:hidden;display:flex;flex-direction:column;height:100dvh;min-width:0}
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column;height:calc(100dvh - var(--top-banner-offset));min-width:0;min-height:0}
+.chat-shell{height:100%;min-height:0}
+.chat-composer-wrap{position:relative;z-index:5}
+#composer-box{box-shadow:0 -16px 36px rgba(0,0,0,.18)}
 
 /* ── Messages ── */
 .msg-user{background:#131328;border:1px solid #1a1a30;border-radius:14px 14px 4px 14px;padding:10px 14px;max-width:78%;font-size:14px;line-height:1.6;word-break:break-word;overflow-wrap:anywhere;white-space:pre-wrap}
@@ -125,6 +129,11 @@ body:not(.light) #hljs-theme-light{display:none}
 .msg-ai blockquote{border-left:2px solid #7c6ff7;padding-left:12px;color:#9090b0;margin:8px 0}
 .msg-ai h1,.msg-ai h2,.msg-ai h3{font-family:'Syne',sans-serif;margin:12px 0 6px;font-weight:600}
 .msg-empty{display:inline-flex;align-items:center;gap:8px;background:#1f0a0a;border:1px solid #7f1d1d;color:#fca5a5;border-radius:8px;padding:9px 12px;font-size:13px}
+.chat-empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;min-height:260px;color:#4a4a6a;text-align:center;padding:18px 20px;gap:12px}
+.chat-empty-star{font-size:52px;opacity:.28;line-height:1}
+.chat-empty-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;color:#9090b0;line-height:1.15}
+.chat-empty-copy{font-size:13px;max-width:390px;line-height:1.6}
+.chat-empty-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:4px}
 .msg-tool{background:#0a0f1a;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;font-size:13px;margin:4px 0}
 .msg-tool .tool-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:#60a5fa;font-family:'DM Mono',monospace}
 .copy-btn{position:absolute;top:8px;right:8px;background:#252540;border:none;color:#9090b0;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:11px;font-family:'DM Mono',monospace;transition:.2s}
@@ -400,10 +409,20 @@ select.input{cursor:pointer;appearance:none}
 /* ── Mobile ── */
 #sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:49;backdrop-filter:blur(2px)}
 @supports (height:100svh){
-  #app,.main,.sidebar,.chat-shell{height:100svh;min-height:100svh}
+  #app,.main,.sidebar{height:calc(100svh - var(--top-banner-offset));min-height:0}
+  .chat-shell{height:100%;min-height:0}
+}
+@media(min-width:769px) and (max-height:760px){
+  .chat-empty-state{justify-content:flex-start;padding-top:8vh;gap:10px}
+  .chat-empty-star{font-size:42px}
+  .chat-empty-title{font-size:20px}
+  .chat-empty-copy{font-size:12.5px;line-height:1.5}
+  .chat-empty-actions{gap:6px}
+  .chat-composer-wrap{padding-top:8px!important;padding-bottom:12px!important}
+  #composer-box{padding:9px 11px!important}
 }
 @media(max-width:768px){
-  .sidebar{position:fixed;left:0;top:0;bottom:0;width:min(86vw,320px);min-width:0;transform:translateX(-100%);box-shadow:4px 0 24px rgba(0,0,0,.5);padding-top:env(safe-area-inset-top)}
+  .sidebar{position:fixed;left:0;top:var(--top-banner-offset);bottom:0;width:min(86vw,320px);min-width:0;transform:translateX(-100%);box-shadow:4px 0 24px rgba(0,0,0,.5);padding-top:env(safe-area-inset-top)}
   .sidebar.open{transform:translateX(0)}
   #sidebar-overlay.visible{display:block}
   #hamburger{display:flex !important;width:40px;height:40px;align-items:center;justify-content:center}
@@ -1361,10 +1380,15 @@ async function loadPlatformStatus() {
     renderGlobalBanner();
   } catch(e) {}
 }
+function setTopChromeOffset(px = 0) {
+  const offset = Math.max(0, Math.ceil(Number(px) || 0));
+  document.body.style.paddingTop = offset ? `${offset}px` : '';
+  document.documentElement.style.setProperty('--top-banner-offset', `${offset}px`);
+}
 function renderGlobalBanner() {
   const old = document.getElementById('global-banner');
   if (old) old.remove();
-  if (!document.getElementById('imp-banner')) document.body.style.paddingTop = '';
+  if (!document.getElementById('imp-banner')) setTopChromeOffset(0);
   const status = S.platformStatus || {};
   const maint = status.maintenance || {};
   const banner = status.banner || {};
@@ -1383,7 +1407,7 @@ function renderGlobalBanner() {
   el.style.cssText = `position:fixed;top:0;left:0;right:0;z-index:900;background:${colors[0]};border-bottom:1px solid ${colors[1]};color:${colors[2]};padding:9px 16px;font-size:13px;display:flex;gap:10px;align-items:center;justify-content:center;text-align:center`;
   el.innerHTML = `<b>${escHtml(data.title)}</b><span>${escHtml(data.message)}</span>`;
   document.body.prepend(el);
-  if (!document.getElementById('imp-banner')) document.body.style.paddingTop = '38px';
+  if (!document.getElementById('imp-banner')) setTopChromeOffset(el.getBoundingClientRect().height || 38);
 }
 
 // ═══════════════════════════════════════════════
@@ -2008,7 +2032,7 @@ function injectPageBackButtons() {
 // ═══════════════════════════════════════════════
 async function chat({ sessionId } = {}) {
   document.getElementById('main-content').innerHTML = `
-  <div class="chat-shell" style="display:flex;flex-direction:column;height:100dvh">
+  <div class="chat-shell" style="display:flex;flex-direction:column;height:100%;min-height:0">
     <!-- Header -->
     <div class="chat-header" style="padding:10px 14px;border-bottom:1px solid #1a1a30;display:flex;align-items:center;gap:10px;flex-shrink:0;background:#07070f">
       <button id="hamburger" onclick="openSidebar()" style="display:none;background:none;border:none;color:#9090b0;font-size:20px;cursor:pointer;padding:2px 6px">☰</button>
@@ -2785,11 +2809,11 @@ function renderUserContent(text, extraHtml = '') {
 function renderMessages(msgs, summaries = []) {
   const el = document.getElementById('messages'); if (!el) return;
   if (!msgs.length) {
-    el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#4a4a6a;text-align:center;padding:20px;gap:12px">
-      <div style="font-size:56px;opacity:.3">✦</div>
-      <div style="font-family:'Syne',sans-serif;font-size:22px;font-weight:700;color:#9090b0">How can JAZZ help?</div>
-      <div style="font-size:13px;max-width:390px;line-height:1.6">Type a message below, use <span style="color:#7c6ff7;font-family:'DM Mono',monospace">/command</span> for connected apps, or attach files.</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:4px">
+    el.innerHTML = `<div class="chat-empty-state">
+      <div class="chat-empty-star">✦</div>
+      <div class="chat-empty-title">How can JAZZ help?</div>
+      <div class="chat-empty-copy">Type a message below, use <span style="color:#7c6ff7;font-family:'DM Mono',monospace">/command</span> for connected apps, or attach files.</div>
+      <div class="chat-empty-actions">
         ${[['Analyze this data','📊'],['Draft an email','📧'],['Explain this code','💻'],['Search my docs','🔍']].map(([t,i])=>`<button class="btn btn-ghost btn-sm" onclick="fillInput('${t}')">${i} ${t}</button>`).join('')}
       </div>
     </div>`;
@@ -7174,8 +7198,8 @@ async function adminTestSkill(id) {
   } catch(e) { toast(e.message,'err'); }
 }
 async function adminUpgradePlan(uid, email) { const tier = prompt(`Plan for ${email}:\nfree / pro / premium / enterprise`); if (!['free','pro','premium','enterprise'].includes(tier)) return; try { await put('/admin/subscription', { user_id:uid, tier }); toast('Plan updated','ok'); adminTab('users',null); } catch(e) { toast(e.message,'err'); } }
-async function adminImpersonate(uid) { try { const d = await post('/admin/users/'+uid+'/impersonate', {}); const orig = S.token; S.token = d.access_token; document.body.insertAdjacentHTML('afterbegin', `<div id="imp-banner" style="background:#431407;border-bottom:2px solid #fbbf24;padding:8px 16px;font-size:13px;font-weight:600;color:#fbbf24;display:flex;align-items:center;justify-content:space-between;position:fixed;top:0;left:0;right:0;z-index:1000">⚠️ Impersonating — <button onclick="stopImpersonate('${orig}')" class="btn btn-ghost btn-sm" style="color:#fbbf24;border-color:#fbbf24">Return to Admin</button></div>`); document.body.style.paddingTop = '44px'; toast('Impersonating','warn'); } catch(e) { toast(e.message,'err'); } }
-function stopImpersonate(orig) { S.token = orig; document.getElementById('imp-banner')?.remove(); document.body.style.paddingTop = '0'; }
+async function adminImpersonate(uid) { try { const d = await post('/admin/users/'+uid+'/impersonate', {}); const orig = S.token; S.token = d.access_token; document.body.insertAdjacentHTML('afterbegin', `<div id="imp-banner" style="background:#431407;border-bottom:2px solid #fbbf24;padding:8px 16px;font-size:13px;font-weight:600;color:#fbbf24;display:flex;align-items:center;justify-content:space-between;position:fixed;top:0;left:0;right:0;z-index:1000">⚠️ Impersonating — <button onclick="stopImpersonate('${orig}')" class="btn btn-ghost btn-sm" style="color:#fbbf24;border-color:#fbbf24">Return to Admin</button></div>`); setTopChromeOffset(44); toast('Impersonating','warn'); } catch(e) { toast(e.message,'err'); } }
+function stopImpersonate(orig) { S.token = orig; document.getElementById('imp-banner')?.remove(); renderGlobalBanner(); }
 async function adminDeleteUser(uid, email) { if (!confirm('Delete user '+email+'?')) return; try { await del('/admin/users/'+uid); toast('Deleted','ok'); adminTab('users',null); } catch(e) { toast(e.message,'err'); } }
 async function adminBroadcast() { const title = prompt('Title:'); if (!title) return; const msg = prompt('Message:'); if (!msg) return; try { await post('/admin/broadcast', { title, message:msg, type:'info' }); toast('Broadcast sent','ok'); } catch(e) { toast(e.message,'err'); } }
 async function adminCreateCoupon() { const code = prompt('Coupon code:'); if (!code) return; const tier = prompt('Tier (free/pro/premium/enterprise):'); if (!['free','pro','premium','enterprise'].includes(tier)) return; const days = prompt('Days:','30'); try { await post('/admin/coupons', { code, grants_tier:tier, duration_days:parseInt(days)||30, max_uses:100 }); toast('Coupon created','ok'); } catch(e) { toast(e.message,'err'); } }
