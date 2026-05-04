@@ -143,8 +143,8 @@ body:not(.light) #hljs-theme-light{display:none}
 .session-item{padding:10px;border-radius:8px;cursor:pointer;font-size:12.5px;color:#9090b0;transition:.15s;position:relative}
 .session-item:hover{background:#111124;color:#e4e4f4}
 .session-item.active{background:#111124;color:#e4e4f4}
-.sess-actions{display:flex;gap:5px;opacity:.82;transition:.15s;align-items:center}
-.sess-action-btn,.sess-actions > span{width:28px!important;height:28px!important;padding:0!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;border-radius:8px!important;border:1px solid rgba(124,111,247,.16)!important;background:rgba(124,111,247,.08)!important;color:#c8c3ff!important;font-size:15px!important;line-height:1!important;cursor:pointer!important;transition:.15s!important}
+.sess-actions{display:flex;gap:4px;opacity:.82;transition:.15s;align-items:center}
+.sess-action-btn,.sess-actions > span{width:22px!important;height:22px!important;padding:0!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;border-radius:7px!important;border:1px solid rgba(124,111,247,.14)!important;background:rgba(124,111,247,.06)!important;color:#c8c3ff!important;font-size:12px!important;line-height:1!important;cursor:pointer!important;transition:.15s!important}
 .sess-action-btn:hover,.sess-actions > span:hover{background:rgba(124,111,247,.18)!important;border-color:rgba(124,111,247,.45)!important;color:#fff!important;transform:translateY(-1px)}
 .session-item.active .sess-action-btn,.session-item.active .sess-actions > span{background:rgba(124,111,247,.13)!important;border-color:rgba(124,111,247,.28)!important;color:#fff!important}
 @media(pointer:fine){
@@ -409,8 +409,8 @@ select.input{cursor:pointer;appearance:none}
   #hamburger{display:flex !important;width:40px;height:40px;align-items:center;justify-content:center}
   .main{width:100%;min-width:0}
   .session-item{padding:12px 10px;border-radius:10px}
-  .sess-actions{opacity:1;gap:6px}
-  .sess-action-btn,.sess-actions > span{width:34px!important;height:34px!important;border-radius:10px!important;font-size:17px!important}
+  .sess-actions{opacity:1;gap:4px}
+  .sess-action-btn,.sess-actions > span{width:24px!important;height:24px!important;border-radius:8px!important;font-size:13px!important}
   .msg-user{max-width:92%;font-size:14px}
   .msg-ai{font-size:14px}
   #chat-input{font-size:16px}
@@ -1518,7 +1518,7 @@ async function doAuth() {
       return;
     }
     S.token = d.access_token; S.refresh = d.refresh_token; S.user = d.user; save();
-    showApp();
+    showApp({ startFreshChat:true });
   } catch(e) {
     setAuthError(e.message);
     if (e.status === 403 && /verify/i.test(e.message || '')) {
@@ -1643,9 +1643,10 @@ function compareModelsByIntelligence(a, b) {
   return String(a.label || a.id).localeCompare(String(b.label || b.id));
 }
 
-function showApp() {
+function showApp({ startFreshChat = true } = {}) {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
+  if (startFreshChat) S.forceFreshChat = true;
   if (S.user) {
     document.getElementById('user-avatar').textContent = (S.user.full_name || S.user.email || '?')[0].toUpperCase();
     document.getElementById('user-name').textContent = S.user.full_name || S.user.email;
@@ -7261,7 +7262,7 @@ loadSaved();
   await loadPlatformStatus();
   checkResetPasswordRoute();
   if (S.token && S.user) {
-    get('/auth/me').then(u => { S.user = u; save(); showApp(); }).catch(() => doLogout());
+    get('/auth/me').then(u => { S.user = u; save(); showApp({ startFreshChat:true }); }).catch(() => doLogout());
   } else {
     document.getElementById('login-page').style.display = 'flex';
   }

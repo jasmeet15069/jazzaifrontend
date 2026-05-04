@@ -122,6 +122,10 @@ JWT_SECRET      = os.getenv("JWT_SECRET_KEY") or secrets.token_urlsafe(64)
 JWT_ALGORITHM   = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES  = 60 * 24 * 7
 REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 30
+try:
+    BCRYPT_ROUNDS = max(8, min(14, int(os.getenv("BCRYPT_ROUNDS", "10") or "10")))
+except Exception:
+    BCRYPT_ROUNDS = 10
 
 _FERNET_KEY_RAW = os.getenv("FERNET_KEY", "") or Fernet.generate_key().decode()
 _fernet = Fernet(
@@ -224,6 +228,7 @@ _RUNTIME_ENV_KEYS = [
     "REQUIRE_EMAIL_VERIFICATION", "EMAIL_VERIFICATION_EXPIRE_HOURS",
     "EMAIL_VERIFICATION_RETURN_LINK",
     "PASSWORD_RESET_EXPIRE_MINUTES", "PASSWORD_RESET_RETURN_LINK",
+    "BCRYPT_ROUNDS",
 ]
 _RUNTIME_ENV_DEFAULTS = {
     "ADMIN_EMAIL": "jasmeet.15069@gmail.com",
@@ -236,6 +241,7 @@ _RUNTIME_ENV_DEFAULTS = {
     "EMAIL_VERIFICATION_RETURN_LINK": "1",
     "PASSWORD_RESET_EXPIRE_MINUTES": "30",
     "PASSWORD_RESET_RETURN_LINK": "1",
+    "BCRYPT_ROUNDS": "10",
 }
 
 def _env_file_path() -> Path:
@@ -1058,13 +1064,19 @@ CREATE INDEX IF NOT EXISTS idx_skill_usage_user   ON skill_usage_logs(user_id,cr
 # §4  SECURITY / AUTH
 # ══════════════════════════════════════════════════════════════════════════════
 
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=BCRYPT_ROUNDS)
 bearer  = HTTPBearer(auto_error=False)
 
 def _hash_pw(pw: str) -> str: return pwd_ctx.hash(pw[:72].encode())
 def _verify_pw(pw: str, h: str) -> bool:
     try: return pwd_ctx.verify(pw[:72].encode(), h)
     except Exception: return False
+
+async def _hash_pw_async(pw: str) -> str:
+    return await asyncio.get_running_loop().run_in_executor(_executor, _hash_pw, pw)
+
+async def _verify_pw_async(pw: str, h: str) -> bool:
+    return await asyncio.get_running_loop().run_in_executor(_executor, _verify_pw, pw, h)
 
 def _make_access_token(user_id: str, role: str, email: str = "", subscription: str = "free") -> str:
     exp = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -1248,9 +1260,10 @@ async def _reset_password_by_token(raw_token: str, new_password: str) -> str:
     if expires_at < datetime.now(timezone.utc):
         raise HTTPException(400, "Reset link has expired. Please request a new one.")
     now = _utcnow()
+    new_hash = await _hash_pw_async(new_password)
     await db_execute(
         "UPDATE users SET password_hash=?,is_verified=1,updated_at=? WHERE id=?",
-        (_hash_pw(new_password), now, row["user_id"]),
+        (new_hash, now, row["user_id"]),
     )
     await db_execute("UPDATE refresh_tokens SET revoked=1 WHERE user_id=? AND revoked=0", (row["user_id"],))
     await db_execute("UPDATE password_reset_tokens SET used_at=? WHERE id=?", (now, row["id"]))
@@ -2278,6 +2291,28 @@ RESPONSE GUIDELINES:
 • For connector results, present data in clean tables or structured lists
 • For code, always include the language tag in code blocks"""
 
+def _display_name_from_user_row(row: Optional[Dict[str, Any]]) -> str:
+    if not row:
+        return ""
+    full_name = (row.get("full_name") or "").strip()
+    if full_name:
+        return full_name[:120]
+    email = (row.get("email") or "").strip()
+    if not email or "@" not in email:
+        return ""
+    local = re.sub(r"[._-]+", " ", email.split("@", 1)[0]).strip()
+    return " ".join(part[:1].upper() + part[1:] for part in local.split())[:120]
+
+def _authenticated_user_context(row: Optional[Dict[str, Any]]) -> str:
+    name = _display_name_from_user_row(row)
+    email = (row.get("email") or "").strip() if row else ""
+    lines = ["[Current authenticated user identity]"]
+    lines.append(f"Name: {name}" if name else "Name: not provided")
+    if email:
+        lines.append(f"Email: {email}")
+    lines.append("Use only this identity when addressing the user. If the name is not provided, do not invent a name. This current identity overrides older memories, examples, and prior chat summaries.")
+    return "\n".join(lines)
+
 _THINKING_SYSTEM = """You are JAZZ — an advanced AI with deep reasoning capabilities.
 When given complex questions, think through the problem carefully before answering.
 
@@ -2298,6 +2333,8 @@ async def _build_context(session_id: str, user_id: str, new_msg: str,
                           mcp_context: str = "") -> List[Dict]:
     budget = await _model_request_input_budget(model_id)
     sys_parts = [_SYSTEM_PROMPT, f"Today: {datetime.now(timezone.utc).strftime('%A, %B %d, %Y %H:%M UTC')}"]
+    user_row = await db_fetchone("SELECT email,full_name FROM users WHERE id=?", (user_id,))
+    sys_parts.append(_authenticated_user_context(user_row))
     mems = await _get_memories(user_id)
     if mems: sys_parts.append(_format_memories(mems))
 
@@ -5853,13 +5890,14 @@ async def auth_register(request: Request, body: AuthIn):
     uid = _new_id(); now = _utcnow()
     full_name = (body.full_name or email.split("@")[0]).strip()[:120]
     is_verified = 0 if _email_verification_required() else 1
+    password_hash = await _hash_pw_async(body.password)
     await db_execute(
         "INSERT INTO users(id,email,password_hash,full_name,role,subscription,is_active,is_verified,created_at,updated_at)"
        " VALUES(?,?,?,?,?,?,?,?,?,?)",
         (
             uid,
             email,
-            _hash_pw(body.password),
+            password_hash,
             full_name,
             "client",
             "free",
@@ -5932,7 +5970,7 @@ async def auth_verify_email(token: str = ""):
 async def auth_login(body: AuthIn):
     email = _validated_email(body.email)
     user = await db_fetchone("SELECT * FROM users WHERE email=? AND is_active=1", (email,))
-    if not user or not _verify_pw(body.password, user["password_hash"]):
+    if not user or not await _verify_pw_async(body.password, user["password_hash"]):
         raise HTTPException(401, "Invalid credentials")
     if _email_verification_required() and not int(user.get("is_verified") or 0):
         raise HTTPException(
@@ -5992,11 +6030,12 @@ async def auth_logout(body: RefreshIn):
 async def auth_change_password(body: ChangePasswordReq, user: Dict = Depends(_get_current_user)):
     uid = user.get("id") or user.get("sub","")
     row = await db_fetchone("SELECT password_hash FROM users WHERE id=?", (uid,))
-    if not row or not _verify_pw(body.current_password, row["password_hash"]):
+    if not row or not await _verify_pw_async(body.current_password, row["password_hash"]):
         raise HTTPException(400, "Wrong current password")
     _validated_password(body.new_password)
+    new_hash = await _hash_pw_async(body.new_password)
     await db_execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
-                     (_hash_pw(body.new_password), _utcnow(), uid))
+                     (new_hash, _utcnow(), uid))
     return {"ok":True}
 
 @app.put("/auth/profile")
@@ -9421,7 +9460,8 @@ async def admin_security_user_action(uid: str, action: str, body: dict = None,
     elif action == "reset_password":
         pw = str(body.get("password") or "").strip()
         _validated_password(pw)
-        await db_execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?", (_hash_pw(pw), now, uid))
+        new_hash = await _hash_pw_async(pw)
+        await db_execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?", (new_hash, now, uid))
         await db_execute("UPDATE refresh_tokens SET revoked=1 WHERE user_id=? AND revoked=0", (uid,))
         detail["password_changed"] = True
     elif action == "disable":
