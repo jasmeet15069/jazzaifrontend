@@ -229,6 +229,8 @@ _RUNTIME_ENV_KEYS = [
     "TTS_VOICE", "LIVY_URL", "LIVY_USER", "LIVY_PASSWORD",
     "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
     "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY",
+    "SUPABASE_OAUTH_CLIENT_ID", "SUPABASE_OAUTH_CLIENT_SECRET",
+    "SUPABASE_OAUTH_SCOPES", "SUPABASE_OAUTH_AUTH_METHOD",
     "REQUIRE_EMAIL_VERIFICATION", "EMAIL_VERIFICATION_EXPIRE_HOURS",
     "EMAIL_VERIFICATION_RETURN_LINK",
     "PASSWORD_RESET_EXPIRE_MINUTES", "PASSWORD_RESET_RETURN_LINK",
@@ -254,6 +256,10 @@ _RUNTIME_ENV_DEFAULTS = {
     "EMAIL_FROM": "",
     "EMAIL_FROM_NAME": "JAZZ AI",
     "RESEND_API_KEY": "",
+    "SUPABASE_OAUTH_CLIENT_ID": "",
+    "SUPABASE_OAUTH_CLIENT_SECRET": "",
+    "SUPABASE_OAUTH_SCOPES": "openid email profile",
+    "SUPABASE_OAUTH_AUTH_METHOD": "auto",
     "SMTP_HOST": "",
     "SMTP_PORT": "587",
     "SMTP_USERNAME": "",
@@ -951,6 +957,11 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     scopes TEXT DEFAULT '', expires_at TEXT NOT NULL, created_at TEXT NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS supabase_oauth_states (
+    id TEXT PRIMARY KEY, state TEXT NOT NULL UNIQUE,
+    code_verifier TEXT NOT NULL, redirect_uri TEXT NOT NULL,
+    expires_at TEXT NOT NULL, created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS user_last_result (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE,
     connector_type TEXT NOT NULL, result_json TEXT NOT NULL, updated_at TEXT NOT NULL,
@@ -1068,6 +1079,7 @@ CREATE INDEX IF NOT EXISTS idx_pw_reset_hash      ON password_reset_tokens(token
 CREATE INDEX IF NOT EXISTS idx_pw_reset_user      ON password_reset_tokens(user_id,used_at);
 CREATE INDEX IF NOT EXISTS idx_ai_models_active   ON ai_models(is_active,is_default);
 CREATE INDEX IF NOT EXISTS idx_oauth_states       ON oauth_states(state, expires_at);
+CREATE INDEX IF NOT EXISTS idx_supabase_oauth_states ON supabase_oauth_states(state, expires_at);
 CREATE INDEX IF NOT EXISTS idx_smart_conn_user    ON smart_connectors(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_connector_logs     ON connector_logs(connector_type,status,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_sidebar_access_user ON user_sidebar_feature_access(user_id);
@@ -1496,6 +1508,271 @@ def _auth_html_page(title: str, message: str, ok: bool = True) -> HTMLResponse:
     safe_msg = html_lib.escape(message)
     html = f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{safe_title}</title><style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#07070f;color:#e4e4f4;font-family:Inter,system-ui,sans-serif}}.box{{width:min(460px,calc(100vw - 32px));border:1px solid #252540;border-radius:18px;background:#101020;padding:28px;box-shadow:0 20px 80px rgba(0,0,0,.45)}}h1{{margin:0 0 10px;font-size:24px}}p{{color:#a0a0c0;line-height:1.5}}a{{color:#8b7cf6}}</style></head><body><main class="box"><h1 style="color:{color}">{safe_title}</h1><p>{safe_msg}</p><p><a href="/">Back to JAZZ AI</a></p></main></body></html>"""
     return HTMLResponse(html, status_code=200 if ok else 400)
+
+def _supabase_auth_base() -> str:
+    base = (
+        os.getenv("SUPABASE_URL")
+        or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        or ""
+    ).strip().rstrip("/")
+    return base
+
+def _supabase_oauth_client_id() -> str:
+    return (os.getenv("SUPABASE_OAUTH_CLIENT_ID") or "").strip()
+
+def _supabase_oauth_client_secret() -> str:
+    return (os.getenv("SUPABASE_OAUTH_CLIENT_SECRET") or "").strip()
+
+def _supabase_oauth_scopes() -> str:
+    return (os.getenv("SUPABASE_OAUTH_SCOPES") or "openid email profile").strip() or "openid email profile"
+
+def _supabase_oauth_auth_method() -> str:
+    raw = (os.getenv("SUPABASE_OAUTH_AUTH_METHOD") or "auto").strip().lower()
+    if raw not in {"auto", "none", "client_secret_basic", "client_secret_post"}:
+        return "auto"
+    return raw
+
+def _supabase_oauth_redirect_uri(request: Optional[Request] = None, explicit: str = "") -> str:
+    value = (explicit or "").strip()
+    if value:
+        return value
+    return f"{_auth_link_base_url(request)}/auth/supabase/callback"
+
+def _base64url(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+def _pkce_pair() -> Tuple[str, str]:
+    verifier = _base64url(secrets.token_bytes(48))
+    challenge = _base64url(hashlib.sha256(verifier.encode("ascii")).digest())
+    return verifier, challenge
+
+async def _supabase_oauth_authorize_url(request: Request, redirect_uri: str = "") -> Dict[str, str]:
+    base = _supabase_auth_base()
+    client_id = _supabase_oauth_client_id()
+    if not base or not client_id:
+        raise HTTPException(400, "Supabase OAuth is not configured. Add SUPABASE_OAUTH_CLIENT_ID in .env.")
+    redirect = _supabase_oauth_redirect_uri(request, redirect_uri)
+    verifier, challenge = _pkce_pair()
+    state = _base64url(secrets.token_bytes(32))
+    now = _utcnow()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    await db_execute(
+        "DELETE FROM supabase_oauth_states WHERE expires_at<?",
+        (now,),
+    )
+    await db_execute(
+        "INSERT INTO supabase_oauth_states(id,state,code_verifier,redirect_uri,expires_at,created_at)"
+        " VALUES(?,?,?,?,?,?)",
+        (_new_id(), state, verifier, redirect, expires_at, now),
+    )
+    params = {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": redirect,
+        "scope": _supabase_oauth_scopes(),
+        "state": state,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    }
+    return {
+        "ok": True,
+        "url": f"{base}/auth/v1/oauth/authorize?{urllib.parse.urlencode(params)}",
+        "state": state,
+        "redirect_uri": redirect,
+    }
+
+def _json_request_sync(url: str, *, method: str = "GET", token: str = "", apikey: str = "", timeout: int = 20) -> Dict[str, Any]:
+    headers = {"Accept": "application/json", "X-Client-Info": "jazz-ai-server/14"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if apikey:
+        headers["apikey"] = apikey
+    req = urllib.request.Request(url, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read().decode("utf-8", "ignore")
+        return json.loads(raw or "{}")
+
+def _form_request_sync(url: str, form: Dict[str, str], headers: Optional[Dict[str, str]] = None, timeout: int = 25) -> Dict[str, Any]:
+    req = urllib.request.Request(
+        url,
+        data=urllib.parse.urlencode(form).encode("utf-8"),
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Client-Info": "jazz-ai-server/14",
+            **(headers or {}),
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read().decode("utf-8", "ignore")
+        return json.loads(raw or "{}")
+
+def _decode_jwt_unverified(token: str) -> Dict[str, Any]:
+    try:
+        part = str(token or "").split(".")[1]
+        part += "=" * (-len(part) % 4)
+        raw = base64.urlsafe_b64decode(part.encode("ascii"))
+        data = json.loads(raw.decode("utf-8", "ignore"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+def _exchange_supabase_oauth_code_sync(code: str, verifier: str, redirect_uri: str) -> Dict[str, Any]:
+    base = _supabase_auth_base()
+    client_id = _supabase_oauth_client_id()
+    if not base or not client_id:
+        raise RuntimeError("Supabase OAuth is not configured")
+    client_secret = _supabase_oauth_client_secret()
+    method = _supabase_oauth_auth_method()
+    if method == "auto":
+        method = "client_secret_basic" if client_secret else "none"
+    form = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": redirect_uri,
+        "code_verifier": verifier,
+        "client_id": client_id,
+    }
+    headers: Dict[str, str] = {}
+    if method == "client_secret_basic" and client_secret:
+        basic = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("ascii")
+        headers["Authorization"] = f"Basic {basic}"
+    elif method == "client_secret_post" and client_secret:
+        form["client_secret"] = client_secret
+    token_url = f"{base}/auth/v1/oauth/token"
+    try:
+        return _form_request_sync(token_url, form, headers)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "ignore")
+        if exc.code not in (404, 405):
+            raise RuntimeError(f"Supabase OAuth token exchange failed ({exc.code}): {body[:300]}")
+        legacy = f"{base}/auth/v1/token?grant_type=authorization_code"
+        try:
+            return _form_request_sync(legacy, form, headers)
+        except urllib.error.HTTPError as exc2:
+            body2 = exc2.read().decode("utf-8", "ignore")
+            raise RuntimeError(f"Supabase OAuth token exchange failed ({exc2.code}): {body2[:300]}")
+
+def _supabase_oauth_userinfo_sync(access_token: str, id_token: str = "") -> Dict[str, Any]:
+    base = _supabase_auth_base()
+    apikey = (
+        os.getenv("SUPABASE_PUBLISHABLE_KEY")
+        or os.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")
+        or ""
+    ).strip()
+    merged: Dict[str, Any] = {}
+    if id_token:
+        merged.update(_decode_jwt_unverified(id_token))
+    if access_token:
+        merged.update(_decode_jwt_unverified(access_token))
+    if base and access_token:
+        for path in ("/auth/v1/userinfo", "/auth/v1/user"):
+            try:
+                data = _json_request_sync(f"{base}{path}", token=access_token, apikey=apikey)
+                if isinstance(data, dict):
+                    merged.update(data)
+                    break
+            except Exception:
+                continue
+    return merged
+
+async def _exchange_supabase_oauth_code(body: SupabaseOAuthExchange) -> Dict[str, Any]:
+    state = str(body.state or "").strip()
+    code = str(body.code or "").strip()
+    redirect_uri = str(body.redirect_uri or "").strip()
+    row = await db_fetchone("SELECT * FROM supabase_oauth_states WHERE state=?", (state,))
+    if not row:
+        raise HTTPException(400, "Supabase OAuth session expired. Start again.")
+    try:
+        expires_at = datetime.fromisoformat(row["expires_at"])
+    except Exception:
+        expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await db_execute("DELETE FROM supabase_oauth_states WHERE state=?", (state,))
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(400, "Supabase OAuth session expired. Start again.")
+    if redirect_uri != row["redirect_uri"]:
+        raise HTTPException(400, "Supabase OAuth redirect mismatch")
+    try:
+        tokens = await asyncio.get_running_loop().run_in_executor(
+            _executor, _exchange_supabase_oauth_code_sync, code, row["code_verifier"], redirect_uri
+        )
+        profile = await asyncio.get_running_loop().run_in_executor(
+            _executor,
+            _supabase_oauth_userinfo_sync,
+            tokens.get("access_token", ""),
+            tokens.get("id_token", ""),
+        )
+        profile["_tokens"] = {k: bool(tokens.get(k)) for k in ("access_token", "id_token", "refresh_token")}
+        return profile
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("[AUTH] Supabase OAuth exchange failed: %s", e)
+        raise HTTPException(400, str(e))
+
+def _supabase_profile_email(profile: Dict[str, Any]) -> str:
+    email = profile.get("email")
+    if not email and isinstance(profile.get("user"), dict):
+        email = profile["user"].get("email")
+    if not email and isinstance(profile.get("user_metadata"), dict):
+        email = profile["user_metadata"].get("email")
+    return _validated_email(str(email or ""))
+
+def _supabase_profile_name(profile: Dict[str, Any], email: str) -> str:
+    meta = profile.get("user_metadata") if isinstance(profile.get("user_metadata"), dict) else {}
+    name = (
+        profile.get("name")
+        or profile.get("full_name")
+        or meta.get("full_name")
+        or meta.get("name")
+        or email.split("@")[0]
+    )
+    return str(name or email.split("@")[0]).strip()[:120]
+
+async def _issue_jazz_auth_for_supabase_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+    email = _supabase_profile_email(profile)
+    full_name = _supabase_profile_name(profile, email)
+    now = _utcnow()
+    user = await db_fetchone("SELECT * FROM users WHERE email=?", (email,))
+    if user:
+        uid = user["id"]
+        updates = ["is_verified=1", "is_active=1", "last_login_at=?", "updated_at=?"]
+        vals: List[Any] = [now, now]
+        if not (user.get("full_name") or "").strip() and full_name:
+            updates.append("full_name=?")
+            vals.append(full_name)
+        vals.append(uid)
+        await db_execute(f"UPDATE users SET {','.join(updates)} WHERE id=?", tuple(vals))
+    else:
+        uid = _new_id()
+        password_hash = await _hash_pw_async(secrets.token_urlsafe(32))
+        await db_execute(
+            "INSERT INTO users(id,email,password_hash,full_name,role,subscription,is_active,is_verified,last_login_at,created_at,updated_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (uid, email, password_hash, full_name, "client", "free", 1, 1, now, now, now),
+        )
+    user = await db_fetchone(
+        "SELECT id,email,full_name,role,subscription,memory_enabled,is_verified FROM users WHERE id=?",
+        (uid,),
+    )
+    raw = f"jzr_{secrets.token_urlsafe(48)}"
+    h = _hash_token(raw)
+    exp = (datetime.now(timezone.utc) + timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)).isoformat()
+    await db_execute(
+        "INSERT INTO refresh_tokens(id,user_id,token_hash,expires_at,created_at) VALUES(?,?,?,?,?)",
+        (_new_id(), uid, h, exp, now),
+    )
+    await db_execute(
+        "INSERT INTO audit_log(id,actor_id,target_id,action,detail_json,created_at) VALUES(?,?,?,?,?,?)",
+        (_new_id(), uid, uid, "supabase_oauth_login", json.dumps({"email": email}), now),
+    )
+    return {
+        "access_token": _make_access_token(user["id"], user["role"], user["email"], user["subscription"]),
+        "refresh_token": raw,
+        "token_type": "bearer",
+        "user": {k: user[k] for k in ("id", "email", "full_name", "role", "subscription", "memory_enabled", "is_verified")},
+    }
 
 async def _setting_get(key: str, default: Any = None) -> Any:
     row = await db_fetchone("SELECT value FROM platform_settings WHERE key=?", (key,))
@@ -5757,6 +6034,11 @@ class PasswordResetIn(BaseModel):
 class RefreshIn(BaseModel):
     refresh_token: str
 
+class SupabaseOAuthExchange(BaseModel):
+    code: str = Field(..., min_length=8)
+    state: str = Field(..., min_length=8)
+    redirect_uri: str = Field(..., min_length=8)
+
 class ProfileUpdate(BaseModel):
     full_name: Optional[str] = None
     memory_enabled: Optional[bool] = None
@@ -6075,6 +6357,10 @@ async def serve_frontend():
 async def serve_chat_session(session_id: str):
     return _serve_frontend_response()
 
+@app.get("/auth/supabase/callback", response_class=HTMLResponse)
+async def serve_supabase_auth_callback():
+    return _serve_frontend_response()
+
 # ══════════════════════════════════════════════════════════════════════════════
 # §22  AUTH ROUTES
 # ══════════════════════════════════════════════════════════════════════════════
@@ -6086,6 +6372,28 @@ async def platform_status():
 @app.get("/auth/supabase-config")
 async def auth_supabase_config():
     return _supabase_public_config()
+
+@app.get("/auth/supabase/status")
+async def auth_supabase_status(request: Request):
+    base = _supabase_auth_base()
+    client_id = _supabase_oauth_client_id()
+    redirect_uri = _supabase_oauth_redirect_uri(request)
+    return {
+        "enabled": bool(base and client_id),
+        "project_url": base,
+        "redirect_uri": redirect_uri,
+        "scopes": _supabase_oauth_scopes(),
+        "auth_method": _supabase_oauth_auth_method(),
+    }
+
+@app.get("/auth/supabase/start-url")
+async def auth_supabase_start_url(request: Request, redirect_uri: str = ""):
+    return await _supabase_oauth_authorize_url(request, redirect_uri)
+
+@app.post("/auth/supabase/exchange")
+async def auth_supabase_exchange(body: SupabaseOAuthExchange):
+    profile = await _exchange_supabase_oauth_code(body)
+    return await _issue_jazz_auth_for_supabase_profile(profile)
 
 @app.post("/auth/register")
 async def auth_register(request: Request, body: AuthIn):

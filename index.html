@@ -807,6 +807,7 @@ try {
       <button id="auth-submit" class="btn btn-primary" style="width:100%;font-size:14px;padding:12px;justify-content:center;border-radius:10px" onclick="doAuth()">
         <span id="auth-btn-text">Sign In</span>
       </button>
+      <button id="supabase-auth-btn" class="btn" style="display:none;width:100%;font-size:13px;padding:10px;justify-content:center;border-radius:10px;margin-top:8px" onclick="startSupabaseAuth()">Continue with Supabase</button>
       <button id="auth-forgot-btn" class="btn btn-ghost" style="width:100%;font-size:12px;padding:9px;justify-content:center;border-radius:10px;margin-top:8px" onclick="forgotPassword()">Forgot password?</button>
       <button id="auth-resend-btn" class="btn" style="display:none;width:100%;font-size:13px;padding:10px;justify-content:center;border-radius:10px;margin-top:10px" onclick="resendVerification()">Resend verification link</button>
     </div>
@@ -1390,6 +1391,74 @@ function setAuthLoading(on) {
   if (btn) btn.disabled = !!on;
   if (txt) txt.textContent = on ? 'Working...' : (authMode === 'login' ? 'Sign In' : 'Create Account');
 }
+function supabaseAuthRedirectUri() {
+  return `${window.location.origin}/auth/supabase/callback`;
+}
+async function checkSupabaseAuthStatus() {
+  const btn = document.getElementById('supabase-auth-btn');
+  if (!btn) return;
+  try {
+    await resolveApiBase();
+    const d = await get('/auth/supabase/status');
+    btn.style.display = d && d.enabled ? 'flex' : 'none';
+    if (d && d.redirect_uri) btn.title = `Supabase OAuth redirect: ${d.redirect_uri}`;
+  } catch(e) {
+    btn.style.display = 'none';
+  }
+}
+async function startSupabaseAuth() {
+  clearAuthMessages();
+  const btn = document.getElementById('supabase-auth-btn');
+  if (btn) btn.disabled = true;
+  try {
+    await resolveApiBase();
+    const redirect_uri = supabaseAuthRedirectUri();
+    const d = await get('/auth/supabase/start-url?redirect_uri=' + encodeURIComponent(redirect_uri));
+    if (!d || !d.url) throw new Error('Supabase OAuth is not ready');
+    window.location.href = d.url;
+  } catch(e) {
+    setAuthError(e.message || 'Supabase OAuth is not ready');
+    if (btn) btn.disabled = false;
+  }
+}
+async function handleSupabaseAuthCallback() {
+  try {
+    if (!/^\/auth\/supabase\/callback\/?$/.test(window.location.pathname || '')) return false;
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-page').style.display = 'flex';
+    switchAuthTab('login');
+    const qs = new URLSearchParams(window.location.search || '');
+    const error = qs.get('error') || '';
+    const errorDescription = qs.get('error_description') || '';
+    if (error) {
+      setAuthError(errorDescription || error);
+      window.history.replaceState({}, document.title, '/');
+      checkSupabaseAuthStatus();
+      return true;
+    }
+    const code = qs.get('code') || '';
+    const state = qs.get('state') || '';
+    if (!code || !state) {
+      setAuthError('Missing Supabase OAuth code. Start again.');
+      window.history.replaceState({}, document.title, '/');
+      checkSupabaseAuthStatus();
+      return true;
+    }
+    setAuthLoading(true);
+    setAuthSuccess('Completing Supabase sign in...');
+    const d = await post('/auth/supabase/exchange', { code, state, redirect_uri: supabaseAuthRedirectUri() });
+    S.token = d.access_token; S.refresh = d.refresh_token; S.user = d.user; save();
+    window.history.replaceState({}, document.title, '/');
+    showApp({ startFreshChat:true });
+    return true;
+  } catch(e) {
+    setAuthError(e.message || 'Supabase sign in failed');
+    window.history.replaceState({}, document.title, '/');
+    return true;
+  } finally {
+    setAuthLoading(false);
+  }
+}
 function switchAuthTab(m) {
   authMode = m;
   document.getElementById('tab-login').style.cssText  = m==='login'  ? 'flex:1;text-align:center;padding:7px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;background:#111124;color:#e4e4f4;transition:.15s' : 'flex:1;text-align:center;padding:7px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;color:#9090b0;transition:.15s';
@@ -1400,6 +1469,7 @@ function switchAuthTab(m) {
   document.getElementById('auth-password-hint').style.display = m === 'signup' ? 'block' : 'none';
   document.getElementById('auth-resend-btn').style.display = 'none';
   document.getElementById('auth-forgot-btn').style.display = m === 'login' ? 'flex' : 'none';
+  checkSupabaseAuthStatus();
   clearAuthMessages();
 }
 function validateAuthInputs() {
@@ -7381,10 +7451,12 @@ loadSaved();
   await resolveApiBase();
   await loadPlatformStatus();
   checkResetPasswordRoute();
+  if (await handleSupabaseAuthCallback()) return;
   if (S.token && S.user) {
     get('/auth/me').then(u => { S.user = u; save(); showApp({ startFreshChat:true }); }).catch(() => doLogout());
   } else {
     document.getElementById('login-page').style.display = 'flex';
+    checkSupabaseAuthStatus();
   }
 })();
 </script>
