@@ -2256,6 +2256,22 @@ async def _llm_text_once(messages: List[Dict], model_id: str,
             **({"extra_body": e} if e else {})))
     return resp.choices[0].message.content or "", _canonical_model_id(model_id), model_name
 
+def _image_text_is_weak(text: str) -> bool:
+    cleaned = re.sub(r"\s+", " ", (text or "").strip()).strip(" .,:;!-").lower()
+    if not cleaned:
+        return True
+    color_only = {
+        "white", "black", "blue", "green", "red", "yellow", "orange", "purple",
+        "gray", "grey", "blank", "empty", "plain white", "a white image",
+        "the image is white", "white background"
+    }
+    if cleaned in color_only:
+        return True
+    words = re.findall(r"[A-Za-z0-9_]+", cleaned)
+    if len(words) < 10 and not any(ch.isdigit() for ch in cleaned):
+        return True
+    return False
+
 async def _image_to_text_model_id() -> Optional[str]:
     row = await db_fetchone(
         "SELECT id FROM ai_models WHERE id=? AND is_active=1 AND is_vision=1 LIMIT 1",
@@ -2268,16 +2284,50 @@ async def _image_to_text_model_id() -> Optional[str]:
         "ORDER BY updated_at DESC LIMIT 1")
     return row["id"] if row else None
 
-async def _extract_image_text(image_url: str, question: str = "") -> Dict[str, Any]:
-    mid = await _image_to_text_model_id()
-    if not mid:
-        raise RuntimeError("No internal image-to-text model is active")
+async def _image_to_text_model_candidates(user_id: Optional[str] = None,
+                                          preferred_model_id: str = "") -> List[str]:
+    candidates: List[str] = []
+    internal = await _image_to_text_model_id()
+    if internal:
+        candidates.append(_canonical_model_id(internal))
+    preferred = _canonical_model_id(preferred_model_id)
+    if preferred and await _model_supports_vision(preferred):
+        row = await db_fetchone(
+            "SELECT id,name,model_name,description,tags_json FROM ai_models WHERE id=? LIMIT 1",
+            (preferred,))
+        if not (row and _model_is_internal(row)):
+            if not user_id or await _model_enabled_for_user(user_id, preferred):
+                candidates.append(preferred)
+    rows = await db_fetchall(
+        "SELECT id,name,model_name,description,tags_json FROM ai_models WHERE is_active=1 AND is_vision=1 ORDER BY is_default DESC,is_fast DESC,name")
+    allowed = set(await _allowed_model_ids_for_user(user_id)) if user_id else set()
+    for row in rows:
+        mid = _canonical_model_id(row["id"])
+        if _model_is_internal(row) and mid != internal:
+            continue
+        if allowed and mid not in allowed and mid != internal:
+            continue
+        candidates.append(mid)
+    seen, out = set(), []
+    for mid in candidates:
+        if mid and mid not in seen:
+            seen.add(mid); out.append(mid)
+    return out
+
+async def _extract_image_text(image_url: str, question: str = "",
+                              preferred_model_id: str = "",
+                              user_id: Optional[str] = None) -> Dict[str, Any]:
+    candidates = await _image_to_text_model_candidates(user_id, preferred_model_id)
+    if not candidates:
+        raise RuntimeError("No active image-to-text or vision model is available")
     prompt = (
-        "Convert the image into useful text for a downstream chat model. "
-        "If the image is a diagram, screenshot, chart, document, table, receipt, code image, or whiteboard, "
-        "extract visible labels/text and summarize layout, entities, arrows, steps, and relationships. "
-        "Be faithful. Do not answer the user's question directly unless it helps describe the image. "
-        "Do not reduce the image to a single color.\n\n"
+        "Convert the image into precise text for a downstream chat model. Return structured Markdown with:\n"
+        "1. Image type and purpose.\n"
+        "2. All visible OCR text, labels, headings, numbers, buttons, and captions.\n"
+        "3. Layout/objects, arrows, sequence steps, tables, charts, code, or diagram relationships.\n"
+        "4. Anything uncertain or too small to read.\n"
+        "Be faithful and detailed. Do not answer the user's question directly unless it helps describe the image. "
+        "Never reduce the image to a single color or generic phrase when there is visible content.\n\n"
         f"User question/context: {question or 'Describe the image accurately.'}"
     )
     messages = [
@@ -2287,17 +2337,110 @@ async def _extract_image_text(image_url: str, question: str = "") -> Dict[str, A
             {"type":"image_url","image_url":{"url":image_url}},
         ]},
     ]
-    text, resolved_id, provider_model = await _llm_text_once(messages, mid, max_tokens=4096, temperature=0.15)
-    text = (text or "").strip()
+    last_error: Optional[Exception] = None
+    best: Tuple[str, str, str] = ("", candidates[0], "")
+    for mid in candidates[:4]:
+        try:
+            text, resolved_id, provider_model = await _llm_text_once(messages, mid, max_tokens=4096, temperature=0.12)
+            text = (text or "").strip()
+            best = (text, resolved_id or mid, provider_model)
+            if text and not _image_text_is_weak(text):
+                break
+            logger.warning("[VISION] weak image extraction from %s: %r", mid, text[:120])
+        except Exception as exc:
+            last_error = exc
+            logger.warning("[VISION] image extraction failed with %s: %s", mid, exc)
+    text, resolved_id, provider_model = best
     if not text:
-        raise RuntimeError("Image-to-text model returned empty output")
-    final_id = _canonical_model_id(resolved_id or mid)
+        raise RuntimeError(f"Image-to-text model returned empty output: {last_error}" if last_error else "Image-to-text model returned empty output")
+    final_id = _canonical_model_id(resolved_id or candidates[0])
     return {
         "text": text,
         "model_id": final_id,
         "model_label": await _model_display_name(final_id),
         "provider_model": provider_model,
+        "weak": _image_text_is_weak(text),
     }
+
+def _chat_image_inputs(req: Any) -> List[Dict[str, str]]:
+    items: List[Dict[str, str]] = []
+    if getattr(req, "image_url", None):
+        items.append({"name":"attached image", "mime":"image/*", "url":req.image_url})
+    for att in getattr(req, "attachments", []) or []:
+        if not isinstance(att, dict):
+            continue
+        url = att.get("image_url") or att.get("data_url") or att.get("dataUrl") or att.get("url")
+        mime = str(att.get("type") or att.get("mime") or "")
+        if not url:
+            continue
+        if not (str(url).startswith("data:image/") or mime.startswith("image/")):
+            continue
+        items.append({
+            "name": str(att.get("name") or att.get("filename") or "attached image")[:160],
+            "mime": mime or "image/*",
+            "url": str(url),
+        })
+    seen, out = set(), []
+    for item in items:
+        key = hashlib.sha256(item["url"].encode("utf-8", "ignore")).hexdigest()
+        if key in seen:
+            continue
+        seen.add(key); out.append(item)
+    return out[:6]
+
+async def _build_image_context(req: Any, user_id: str, model_id: str,
+                               tool_log: Optional[List[Dict[str, Any]]] = None,
+                               emit=None) -> Tuple[str, List[Dict[str, Any]]]:
+    images = _chat_image_inputs(req)
+    if not images:
+        return req.message, []
+    extracted: List[Dict[str, Any]] = []
+    for idx, img in enumerate(images, 1):
+        start = {"type":"tool_start","tool":"image_to_text","label":f"Reading image {idx}/{len(images)}"}
+        if tool_log is not None:
+            tool_log.append(start)
+        if emit:
+            await emit(start)
+        try:
+            result = await _extract_image_text(img["url"], req.message, model_id, user_id)
+            label = "Image converted to text"
+            if result.get("weak"):
+                label = "Image converted to text with low confidence"
+            done = {
+                "type":"tool_result",
+                "tool":"image_to_text",
+                "label":label,
+                "count":1,
+                "model_id":result.get("model_id"),
+                "model_label":result.get("model_label") or "Image-to-text model",
+            }
+            if tool_log is not None:
+                tool_log.append({**done, "image_name": img["name"], "excerpt": result["text"][:2000]})
+            if emit:
+                await emit(done)
+            extracted.append({"name":img["name"], "mime":img["mime"], **result})
+        except Exception as exc:
+            logger.warning("[VISION] image-to-text extraction failed: %s", exc)
+            err = {"type":"tool_error","tool":"image_to_text","label":f"Image {idx} text extraction failed."}
+            if tool_log is not None:
+                tool_log.append({**err, "image_name": img["name"], "error":str(exc)[:500]})
+            if emit:
+                await emit(err)
+            extracted.append({"name":img["name"], "mime":img["mime"], "text":f"[Extraction failed: {exc}]", "weak":True})
+    parts = [
+        req.message,
+        "",
+        "[Attached image analysis]",
+        "Use the following extracted visual/OCR content as the source of truth for attached images. "
+        "If the user asks what the image contains, answer from this content and mention uncertainty where extraction says so.",
+    ]
+    for idx, item in enumerate(extracted, 1):
+        parts.append(f"\nImage {idx}: {item.get('name','attached image')} ({item.get('mime','image/*')})")
+        parts.append(f"Extractor: {item.get('model_label','unknown')}")
+        if item.get("weak"):
+            parts.append("Confidence: low - verify carefully and avoid overclaiming.")
+        parts.append(str(item.get("text") or "").strip())
+    return "\n".join(parts).strip(), extracted
 
 async def _llm_text_with_fallback(messages: List[Dict], model_id: str,
                                   max_tokens: int = 1024,
@@ -6220,6 +6363,7 @@ class ChatReq(BaseModel):
     skill_ids: List[str] = Field(default_factory=list)
     force_thinking: Optional[bool] = None
     image_url: Optional[str] = None
+    attachments: List[Dict[str, Any]] = Field(default_factory=list)
     agent_mode: bool = False
     tools: Any = Field(default_factory=dict)
 
@@ -6227,6 +6371,15 @@ class ChatReq(BaseModel):
     @classmethod
     def _skill_ids_to_list(cls, value):
         return _coerce_str_list(value)
+
+    @field_validator("attachments", mode="before")
+    @classmethod
+    def _attachments_to_list(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [v for v in value if isinstance(v, dict)][:12]
+        return []
 
     @field_validator("tools", mode="before")
     @classmethod
@@ -7070,6 +7223,8 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
         explicit_skill_ids = tool_opts.get("skill_ids", req.skill_ids) or []
         mcp_context = _format_mcp_context(tool_opts.get("mcp_tools", []))
         tool_log: List[Dict[str, Any]] = []
+        image_inputs = _chat_image_inputs(req)
+        effective_message = req.message
         await db_execute("UPDATE chat_sessions SET model_id=?,updated_at=? WHERE id=?",
                          (active_model_id, _utcnow(), sid))
         yield f"data: {json.dumps({'type':'start','session_id':sid,'mode':'normal','web_search':use_web,'plan_mode':plan_mode,'model_id':active_model_id,'model_label':await _model_display_name(active_model_id)})}\n\n"
@@ -7185,43 +7340,47 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
                 yield f"data: {json.dumps(result_ev)}\n\n"
 
             # Vision
-            if req.image_url:
-                img_start = {"type":"tool_start","tool":"image_to_text","label":"Reading image"}
-                tool_log.append(img_start)
-                yield f"data: {json.dumps(img_start)}\n\n"
-                try:
-                    image_text_result = await _extract_image_text(req.image_url, req.message)
-                    image_text = image_text_result["text"]
-                    img_done = {
-                        "type":"tool_result",
-                        "tool":"image_to_text",
-                        "label":"Image converted to text",
-                        "count":1,
-                        "model_id":image_text_result.get("model_id"),
-                        "model_label":"Image-to-text model",
-                    }
-                    tool_log.append({**img_done, "excerpt": image_text[:2000]})
-                    yield f"data: {json.dumps(img_done)}\n\n"
-                    image_context = (
-                        f"{req.message}\n\n"
-                        "[Image-to-text extraction]\n"
-                        f"Internal extractor: {image_text_result.get('model_label')}\n"
-                        "Use this extracted visual content as the source of truth for the attached image. "
-                        "Answer the user's question using the extracted text and structure below.\n\n"
-                        f"{image_text}"
-                    )
-                except Exception as exc:
-                    logger.warning("[VISION] image-to-text extraction failed: %s", exc)
-                    err_ev = {"type":"tool_error","tool":"image_to_text","label":"Image text extraction failed."}
-                    tool_log.append({**err_ev, "error":str(exc)[:500]})
-                    yield f"data: {json.dumps(err_ev)}\n\n"
-                    image_context = (
-                        f"{req.message}\n\n"
-                        "[Image-to-text extraction failed]\n"
-                        "The attached image could not be converted to text by the internal vision model. "
-                        "Ask the user to retry with a clearer or smaller image if the answer depends on image contents."
-                    )
-                messages = await _build_context(sid, uid, image_context, use_rag, active_model_id, web_results, plan_mode, skill_context, mcp_context)
+            if image_inputs:
+                extracted_images: List[Dict[str, Any]] = []
+                for img_idx, img in enumerate(image_inputs, 1):
+                    img_start = {"type":"tool_start","tool":"image_to_text","label":f"Reading image {img_idx}/{len(image_inputs)}"}
+                    tool_log.append(img_start)
+                    yield f"data: {json.dumps(img_start)}\n\n"
+                    try:
+                        image_text_result = await _extract_image_text(img["url"], req.message, active_model_id, uid)
+                        image_text = image_text_result["text"]
+                        img_done = {
+                            "type":"tool_result",
+                            "tool":"image_to_text",
+                            "label":"Image converted to text with low confidence" if image_text_result.get("weak") else "Image converted to text",
+                            "count":1,
+                            "model_id":image_text_result.get("model_id"),
+                            "model_label":image_text_result.get("model_label") or "Image-to-text model",
+                        }
+                        tool_log.append({**img_done, "image_name":img.get("name"), "excerpt": image_text[:2000]})
+                        yield f"data: {json.dumps(img_done)}\n\n"
+                        extracted_images.append({"name":img.get("name"), "mime":img.get("mime"), **image_text_result})
+                    except Exception as exc:
+                        logger.warning("[VISION] image-to-text extraction failed: %s", exc)
+                        err_ev = {"type":"tool_error","tool":"image_to_text","label":f"Image {img_idx} text extraction failed."}
+                        tool_log.append({**err_ev, "image_name":img.get("name"), "error":str(exc)[:500]})
+                        yield f"data: {json.dumps(err_ev)}\n\n"
+                        extracted_images.append({"name":img.get("name"), "mime":img.get("mime"), "text":f"[Extraction failed: {exc}]", "weak":True})
+                context_parts = [
+                    req.message,
+                    "",
+                    "[Attached image analysis]",
+                    "Use the extracted visual/OCR content below as the source of truth for attached images. "
+                    "Answer from this content and mention uncertainty where extraction is low-confidence.",
+                ]
+                for img_idx, item in enumerate(extracted_images, 1):
+                    context_parts.append(f"\nImage {img_idx}: {item.get('name') or 'attached image'} ({item.get('mime') or 'image/*'})")
+                    context_parts.append(f"Extractor: {item.get('model_label') or 'unknown'}")
+                    if item.get("weak"):
+                        context_parts.append("Confidence: low - verify carefully and avoid overclaiming.")
+                    context_parts.append(str(item.get("text") or "").strip())
+                effective_message = "\n".join(context_parts).strip()
+                messages = await _build_context(sid, uid, effective_message, use_rag, active_model_id, web_results, plan_mode, skill_context, mcp_context)
 
             # Agent mode
             agent_tools = tool_opts.get("mcp_tools") or []
@@ -7233,7 +7392,7 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
                 yield f"data: {json.dumps(start_ev)}\n\n"
                 agent_context = await _format_agent_tool_context(uid, tool_opts)
                 result_text, agent_tool_log = await _agent_loop(
-                    req.message, user, agent_tools, active_model_id, tool_context=agent_context)
+                    effective_message, user, agent_tools, active_model_id, tool_context=agent_context)
                 for step_ev in agent_tool_log:
                     tool_log.append({"type":"agent_step", **step_ev})
                 async for ev in _stream_text(result_text): yield f"data: {ev}\n\n"
@@ -7258,7 +7417,7 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
             use_thinking = req.force_thinking if req.force_thinking is not None else _needs_thinking(req.message)
             if use_thinking:
                 yield f"data: {json.dumps({'type':'thinking_start'})}\n\n"
-                messages = await _build_context(sid, uid, req.message, use_rag, active_model_id, web_results, plan_mode, skill_context, mcp_context)
+                messages = await _build_context(sid, uid, effective_message, use_rag, active_model_id, web_results, plan_mode, skill_context, mcp_context)
                 think_sys = [{"role":"system","content":_THINKING_SYSTEM}] + \
                             [m for m in messages if m["role"] != "system"]
                 llm_result = await _llm_text_with_fallback(think_sys, active_model_id, max_tokens=4096, temperature=0.6, user_id=uid)
@@ -7300,7 +7459,7 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
                 return
 
             # Normal streaming
-            if not req.image_url:
+            if not image_inputs:
                 messages = await _build_context(sid, uid, req.message, use_rag, active_model_id, web_results, plan_mode, skill_context, mcp_context)
             tok_in = sum(_count_tokens(m.get("content","") if isinstance(m.get("content"), str) else "")
                         for m in messages)
@@ -7309,7 +7468,7 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
             streamed_direct = False
             fallback_model_id = active_model_id
             nvidia_meta = await _nvidia_stream_model_meta(active_model_id)
-            if nvidia_meta and not req.image_url:
+            if nvidia_meta and not image_inputs:
                 start_ev = {"type":"tool_progress","tool":"model","label":f"Asking {nvidia_meta['label']}..."}
                 tool_log.append(start_ev)
                 yield f"data: {json.dumps(start_ev)}\n\n"
@@ -7338,7 +7497,7 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
                     candidates = await _model_fallback_candidates(active_model_id, tok_in, uid)
                     fallback_model_id = next((c for c in candidates if c != active_model_id), active_model_id)
             hf_meta = await _hf_stream_model_meta(active_model_id)
-            if not streamed_direct and hf_meta and not req.image_url:
+            if not streamed_direct and hf_meta and not image_inputs:
                 start_ev = {"type":"tool_progress","tool":"model","label":f"Asking {hf_meta['label']}..."}
                 tool_log.append(start_ev)
                 yield f"data: {json.dumps(start_ev)}\n\n"
@@ -7359,8 +7518,8 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
             if not streamed_direct:
                 llm_result = await _llm_text_with_fallback(
                     messages, fallback_model_id,
-                    max_tokens=3072 if req.image_url else 2048,
-                    temperature=0.25 if req.image_url else 0.7,
+                    max_tokens=3072 if image_inputs else 2048,
+                    temperature=0.25 if image_inputs else 0.7,
                     user_id=uid)
                 for ev in llm_result.get("events", []):
                     tool_log.append(ev)
@@ -7407,7 +7566,7 @@ async def chat_stream_get(
     message: str, model_id: str = "llama-3.3-70b-versatile", use_rag: bool = True,
     session_id: Optional[str] = None, force_thinking: Optional[bool] = None,
     web_search: bool = False, plan_mode: bool = False,
-    skill_ids: str = "", tools_json: str = "",
+    skill_ids: str = "", tools_json: str = "", image_url: Optional[str] = None,
     user: Dict = Depends(_get_current_user)) -> StreamingResponse:
     tools = _safe_json_loads(tools_json, {}) if tools_json else {}
     if not isinstance(tools, dict):
@@ -7418,7 +7577,7 @@ async def chat_stream_get(
     req = ChatReq(message=message, model_id=model_id, use_rag=use_rag,
                   session_id=session_id, force_thinking=force_thinking,
                   web_search=web_search, plan_mode=plan_mode,
-                  skill_ids=parsed_skill_ids, tools=tools)
+                  skill_ids=parsed_skill_ids, tools=tools, image_url=image_url)
     return await chat_stream_post(req, user)
 
 @app.post("/chat/message")
@@ -7435,7 +7594,9 @@ async def chat_message(req: ChatReq, background: BackgroundTasks, user: Dict = D
     plan_mode = bool(tool_opts.get("plan_mode", req.plan_mode))
     skills, skill_matches = await _select_skills_for_message(req.message, tool_opts.get("skill_ids", req.skill_ids) or [])
     web_results = await _web_search(req.message, 6) if use_web else None
-    messages = await _build_context(sid, uid, req.message, use_rag, active_model_id,
+    tool_log: List[Dict[str, Any]] = []
+    effective_message, _ = await _build_image_context(req, uid, active_model_id, tool_log)
+    messages = await _build_context(sid, uid, effective_message, use_rag, active_model_id,
                                     web_results, plan_mode, _format_skill_context(skills),
                                     _format_mcp_context(tool_opts.get("mcp_tools", [])))
     llm_result = await _llm_text_with_fallback(messages, active_model_id, max_tokens=4096, user_id=uid)
@@ -7444,7 +7605,7 @@ async def chat_message(req: ChatReq, background: BackgroundTasks, user: Dict = D
     elapsed = int((time.time()-t0)*1000); now = _utcnow(); mid = _new_id()
     await db_execute("INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,created_at) VALUES(?,?,?,'user',?,?,?)",
                      (_new_id(), sid, uid, req.message, final_model_id, now))
-    tool_log = [{"type":"skill_loaded","skill_id":s["id"],"name":s["name"],"matched_by":skill_matches[i] if i < len(skill_matches) else ""} for i,s in enumerate(skills)]
+    tool_log = tool_log + [{"type":"skill_loaded","skill_id":s["id"],"name":s["name"],"matched_by":skill_matches[i] if i < len(skill_matches) else ""} for i,s in enumerate(skills)]
     tool_log.extend(llm_result.get("events", []))
     await db_execute("INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,latency_ms,tool_calls_json,mode,created_at) VALUES(?,?,?,'assistant',?,?,?,?,'normal',?)",
                      (mid, sid, uid, reply, final_model_id, elapsed, json.dumps(tool_log), now))
