@@ -5916,6 +5916,98 @@ async function admin() {
   </div>`;
   adminTab('stats', document.querySelector('#main-content .tab'));
 }
+function adminBool(v) {
+  return v === true || v === 1 || v === '1' || String(v).toLowerCase() === 'true';
+}
+function adminUserFilterChip(key, label, count, active) {
+  return `<button class="btn ${active ? 'btn-primary' : 'btn-ghost'} btn-sm" onclick="S.adminUserFilter='${escAttr(key)}';adminTab('users',null)">${escHtml(label)} <span class="badge ${active ? 'badge-info' : 'badge-free'}" style="font-size:9px">${adminNum(count)}</span></button>`;
+}
+function adminVerificationBadge(u) {
+  const ok = adminBool(u.is_verified);
+  return `<span class="badge ${ok ? 'badge-ok' : 'badge-err'}" style="font-size:10px">${ok ? 'verified' : 'unverified'}</span>`;
+}
+function renderAdminUsers(d = {}) {
+  const allUsers = d.users || [];
+  const total = Number(d.total ?? allUsers.length);
+  const verified = allUsers.filter(u => adminBool(u.is_verified)).length;
+  const unverified = allUsers.length - verified;
+  const disabled = allUsers.filter(u => !adminBool(u.is_active)).length;
+  const filter = S.adminUserFilter || 'all';
+  const users = allUsers.filter(u => {
+    if (filter === 'verified') return adminBool(u.is_verified);
+    if (filter === 'unverified') return !adminBool(u.is_verified);
+    if (filter === 'disabled') return !adminBool(u.is_active);
+    if (filter === 'admin') return u.role === 'admin';
+    return true;
+  });
+  const filterHtml = [
+    ['all','All',allUsers.length],
+    ['verified','Verified',verified],
+    ['unverified','Unverified',unverified],
+    ['disabled','Disabled',disabled],
+    ['admin','Admins',allUsers.filter(u => u.role === 'admin').length],
+  ].map(([key,label,count]) => adminUserFilterChip(key, label, count, filter === key)).join('');
+  return `<div style="display:grid;gap:14px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-primary btn-sm" onclick="adminBroadcast()">📢 Broadcast</button>
+      <button class="btn btn-ghost btn-sm" onclick="adminCreateCoupon()">🎟 Coupon</button>
+      <button class="btn btn-ghost btn-sm" onclick="adminTab('users',null)">↻ Refresh</button>
+      <span style="margin-left:auto;font-size:12px;color:#4a4a6a;align-self:center">${adminNum(total)} total users</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
+      ${adminMetricTile('Verified', adminNum(verified), 'email confirmed')}
+      ${adminMetricTile('Unverified', adminNum(unverified), 'needs email check')}
+      ${adminMetricTile('Disabled', adminNum(disabled), 'blocked accounts')}
+      ${adminMetricTile('Admins', adminNum(allUsers.filter(u => u.role === 'admin').length), 'control access')}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      ${filterHtml}
+      <span style="font-size:11px;color:#4a4a6a">Verification controls affect JAZZ login access only.</span>
+    </div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:780px">
+      <thead><tr style="font-size:10px;color:#4a4a6a;border-bottom:1px solid #1a1a30;text-transform:uppercase;letter-spacing:.08em">
+        <th style="padding:8px;text-align:left;font-weight:700">Email</th>
+        <th style="padding:8px;text-align:center;font-weight:700">Role</th>
+        <th style="padding:8px;text-align:center;font-weight:700">Plan</th>
+        <th style="padding:8px;text-align:center;font-weight:700">Verification</th>
+        <th style="padding:8px;text-align:left;font-weight:700">Last Login</th>
+        <th style="padding:8px;text-align:right;font-weight:700">Actions</th>
+      </tr></thead>
+      <tbody>${users.map(u => {
+        const isVerified = adminBool(u.is_verified);
+        const isActive = adminBool(u.is_active);
+        return `<tr style="border-bottom:1px solid #0d0d1a;font-size:13px">
+          <td style="padding:10px 8px;min-width:220px">
+            <div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px">${escHtml(u.email)}</div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">
+              ${u.full_name ? `<span class="badge badge-free" style="font-size:9px">${escHtml(u.full_name)}</span>` : ''}
+              <span class="badge ${isActive ? 'badge-ok' : 'badge-err'}" style="font-size:9px">${isActive ? 'active' : 'disabled'}</span>
+              <span class="badge badge-free" style="font-size:9px">joined ${fmtDate(u.created_at)}</span>
+            </div>
+          </td>
+          <td style="padding:10px 8px;text-align:center"><span class="badge ${u.role==='admin'?'badge-warn':'badge-free'}">${escHtml(u.role || 'client')}</span></td>
+          <td style="padding:10px 8px;text-align:center"><span class="badge badge-${escAttr(u.subscription||'free')}">${escHtml(u.subscription||'free')}</span></td>
+          <td style="padding:10px 8px;text-align:center">
+            ${adminVerificationBadge(u)}
+            <div style="font-size:10px;color:#4a4a6a;margin-top:4px">${isVerified ? 'email confirmed' : 'login blocked until verified'}</div>
+          </td>
+          <td style="padding:10px 8px;font-size:11px;color:#4a4a6a;min-width:120px">${u.last_login_at?fmtDate(u.last_login_at):'Never'}</td>
+          <td style="padding:10px 8px">
+            <div style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-xs" onclick="adminUpgradePlan('${escAttr(u.id)}','${escAttr(u.email)}')">Plan</button>
+              <button class="btn btn-ghost btn-xs" onclick="navigate('adminUserFeatures',{userId:'${escAttr(u.id)}',email:'${escAttr(u.email)}'})">✎ Features</button>
+              <button class="btn btn-ghost btn-xs" onclick="navigate('adminUserModels',{userId:'${escAttr(u.id)}',email:'${escAttr(u.email)}'})">Models</button>
+              <button class="btn ${isVerified ? 'btn-danger' : 'btn-success'} btn-xs" onclick="adminSetUserVerification('${escAttr(u.id)}','${escAttr(u.email)}',${isVerified ? 'false' : 'true'})">${isVerified ? 'Unverify' : 'Verify'}</button>
+              ${isVerified ? '' : `<button class="btn btn-ghost btn-xs" onclick="adminResendUserVerification('${escAttr(u.email)}')">Resend</button>`}
+              <button class="btn btn-ghost btn-xs" onclick="adminImpersonate('${escAttr(u.id)}')">👤</button>
+              <button class="btn btn-ghost btn-xs" style="color:#f87171" onclick="adminDeleteUser('${escAttr(u.id)}','${escAttr(u.email)}')">🗑</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('') || `<tr><td colspan="6" style="padding:18px;text-align:center;color:#4a4a6a;font-size:12px">No ${escHtml(filter)} users found.</td></tr>`}</tbody>
+    </table></div>
+  </div>`;
+}
 async function adminTab(tab, el) {
   if (el) {
     document.querySelectorAll('#main-content .tab').forEach(t => t.classList.remove('active'));
@@ -5939,32 +6031,7 @@ async function adminTab(tab, el) {
       </div>`;
     } else if (tab === 'users') {
       const d = await get('/admin/users?limit=100');
-      ab.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="adminBroadcast()">📢 Broadcast</button>
-        <button class="btn btn-ghost btn-sm" onclick="adminCreateCoupon()">🎟 Coupon</button>
-        <span style="margin-left:auto;font-size:12px;color:#4a4a6a;align-self:center">${d.total} total users</span>
-      </div>
-      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:460px">
-        <thead><tr style="font-size:10px;color:#4a4a6a;border-bottom:1px solid #1a1a30;text-transform:uppercase;letter-spacing:.08em">
-          <th style="padding:8px;text-align:left;font-weight:700">Email</th>
-          <th style="padding:8px;text-align:center;font-weight:700">Role</th>
-          <th style="padding:8px;text-align:center;font-weight:700">Plan</th>
-          <th style="padding:8px;text-align:left;font-weight:700">Last Login</th>
-          <th></th>
-        </tr></thead>
-        <tbody>${d.users.map(u => `<tr style="border-bottom:1px solid #0d0d1a;font-size:13px">
-          <td style="padding:10px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px">${escHtml(u.email)}</td>
-          <td style="padding:10px 8px;text-align:center"><span class="badge ${u.role==='admin'?'badge-warn':'badge-free'}">${u.role}</span></td>
-          <td style="padding:10px 8px;text-align:center"><span class="badge badge-${u.subscription||'free'}">${u.subscription||'free'}</span></td>
-          <td style="padding:10px 8px;font-size:11px;color:#4a4a6a">${u.last_login_at?fmtDate(u.last_login_at):'Never'}</td>
-          <td style="padding:10px 8px;display:flex;gap:4px">
-            <button class="btn btn-ghost btn-xs" onclick="adminUpgradePlan('${u.id}','${escAttr(u.email)}')">Plan</button>
-            <button class="btn btn-ghost btn-xs" onclick="navigate('adminUserFeatures',{userId:'${u.id}',email:'${escAttr(u.email)}'})">✎ Features</button>
-            <button class="btn btn-ghost btn-xs" onclick="navigate('adminUserModels',{userId:'${u.id}',email:'${escAttr(u.email)}'})">Models</button>
-            <button class="btn btn-ghost btn-xs" onclick="adminImpersonate('${u.id}')">👤</button>
-            <button class="btn btn-ghost btn-xs" style="color:#f87171" onclick="adminDeleteUser('${u.id}','${escAttr(u.email)}')">🗑</button>
-          </td>
-        </tr>`).join('')}</tbody></table></div>`;
+      ab.innerHTML = renderAdminUsers(d);
     } else if (tab === 'activity') {
       const d = await get('/admin/user-activity?limit=150');
       ab.innerHTML = renderAdminUserActivity(d);
@@ -6446,7 +6513,23 @@ function renderAdminSecurity(d = {}) {
     </div>`).join('') || '<div style="font-size:12px;color:#4a4a6a">No users found.</div>'}</div>
   </div>`;
 }
-async function adminSecurityAction(uid, action, email) {
+async function adminSetUserVerification(uid, email, shouldVerify) {
+  const action = shouldVerify ? 'verify' : 'unverify';
+  await adminSecurityAction(uid, action, email, 'users');
+}
+async function adminResendUserVerification(email) {
+  if (!email) return;
+  if (!confirm('Send verification email to '+email+'?')) return;
+  try {
+    const d = await post('/auth/resend-verification', { email });
+    if (d.email_sent === false) {
+      toast(d.message || 'Verification email delivery is not configured', 'err');
+      return;
+    }
+    toast(d.message || 'Verification email sent', 'ok');
+  } catch(e) { toast(e.message,'err'); }
+}
+async function adminSecurityAction(uid, action, email, refreshTab = 'security') {
   const body = {};
   if (action === 'reset_password') {
     const pw = prompt('New password for '+email+':');
@@ -6456,7 +6539,7 @@ async function adminSecurityAction(uid, action, email) {
   try {
     await post('/admin/security/users/'+encodeURIComponent(uid)+'/'+encodeURIComponent(action), body);
     toast('Security action complete','ok');
-    adminTab('security', null);
+    adminTab(refreshTab || 'security', null);
   } catch(e) { toast(e.message,'err'); }
 }
 function renderAdminPromptPolicies(d = {}) {
