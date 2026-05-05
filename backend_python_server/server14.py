@@ -2937,20 +2937,88 @@ async def _rag_search(user_id: str, query: str, k: int = TOP_K_RETRIEVAL,
 # §8  MEMORY
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def _get_memories(user_id: str, limit: int = 30) -> List[Dict]:
-    return await db_fetchall(
-        "SELECT key,value,confidence FROM memories WHERE user_id=? AND is_active=1 "
-        "ORDER BY confidence DESC, last_reinforced DESC LIMIT ?", (user_id, limit))
+_NOISY_MEMORY_KEYS = {
+    "user_input", "user_query", "user_question", "user_score", "user_attachment",
+    "ai_answer", "ai_rating", "assistant_answer", "assistant_response",
+    "processed_document", "document_uploaded", "uploaded_file", "source", "sources",
+}
+_NOISY_MEMORY_PREFIXES = ("ai_", "assistant_", "bot_", "response_", "answer_")
+_LOW_VALUE_MEMORY_RE = re.compile(r"^(yes|no|ok|okay|hi|hello|thanks|thank you|done|[0-9]+/?[0-9]*|[0-9.]+\s*(kb|mb|gb)?)$", re.I)
+_MEMORY_TERM_STOPWORDS = {
+    "the", "and", "for", "with", "this", "that", "what", "when", "where", "why",
+    "how", "you", "are", "can", "should", "would", "could", "please", "about",
+}
+
+def _normalize_memory_key(key: str) -> str:
+    return re.sub(r"[^a-z0-9_]+", "_", (key or "").strip().lower()).strip("_")[:48]
+
+def _memory_is_high_quality(key: str, value: str, source: str = "auto") -> bool:
+    key = _normalize_memory_key(key)
+    value = re.sub(r"\s+", " ", (value or "").strip())
+    if not key or not value or len(value) < 3:
+        return False
+    if source != "manual":
+        if key in _NOISY_MEMORY_KEYS or key.startswith(_NOISY_MEMORY_PREFIXES):
+            return False
+        if key.startswith("user_") and key not in {
+            "user_name", "user_language", "user_location", "user_timezone",
+            "user_role", "user_goal", "user_preference", "user_project",
+        }:
+            return False
+        if _LOW_VALUE_MEMORY_RE.match(value):
+            return False
+        if len(value) > 260:
+            return False
+        lower = value.lower()
+        if any(x in lower for x in (
+            "whether i am", "as an ai", "i am a very strong llm",
+            "found web result", "http://", "https://", "uploaded ",
+            "conversion can be done", "online latex editor",
+        )):
+            return False
+    return True
+
+def _memory_relevance_score(memory: Dict[str, Any], query_terms: set) -> float:
+    key = str(memory.get("key") or "")
+    value = str(memory.get("value") or "")
+    confidence = float(memory.get("confidence") or 0.0)
+    if not query_terms:
+        return confidence
+    hay_terms = set(re.findall(r"[a-z0-9]{3,}", f"{key} {value}".lower()))
+    overlap = len(query_terms & hay_terms)
+    boost = 0.35 if any(x in key.lower() for x in ("name", "preference", "goal", "project", "language", "location", "role")) else 0
+    return confidence + overlap * 1.25 + boost
+
+async def _get_memories(user_id: str, limit: int = 30, query: str = "") -> List[Dict]:
+    rows = await db_fetchall(
+        "SELECT key,value,confidence,source,last_reinforced FROM memories WHERE user_id=? AND is_active=1 "
+        "ORDER BY confidence DESC, last_reinforced DESC LIMIT ?",
+        (user_id, max(limit * 4, 40)))
+    rows = [r for r in rows if _memory_is_high_quality(r.get("key", ""), r.get("value", ""), r.get("source", "auto"))]
+    query_terms = {
+        t for t in re.findall(r"[a-z0-9]{3,}", (query or "").lower())
+        if t not in _MEMORY_TERM_STOPWORDS
+    }
+    rows.sort(key=lambda r: _memory_relevance_score(r, query_terms), reverse=True)
+    return rows[:limit]
 
 def _format_memories(memories: List[Dict]) -> str:
     if not memories: return ""
-    lines = ["[User memory context:]"]
+    lines = [
+        "[User memory context]",
+        "These are durable user facts/preferences from JAZZ memory. Use them only when relevant. "
+        "Do not invent beyond them; if current user text contradicts memory, prefer the current message.",
+    ]
     for m in memories:
         lines.append(f"  • {m['key']}: {m['value']}")
     return "\n".join(lines)
 
 async def _upsert_memory(user_id: str, key: str, value: str, source: str = "auto",
                           confidence: float = 0.8) -> None:
+    key = _normalize_memory_key(key)
+    value = re.sub(r"\s+", " ", (value or "").strip())[:300]
+    if not _memory_is_high_quality(key, value, source):
+        return
     now = _utcnow()
     row = await db_fetchone("SELECT id,reinforcement_count FROM memories WHERE user_id=? AND key=?",
                             (user_id, key))
@@ -2976,8 +3044,12 @@ async def _auto_extract_memories(user_id: str, user_msg: str, ai_msg: str):
         mem_row = await db_fetchone("SELECT memory_enabled FROM users WHERE id=?",(user_id,))
         if not mem_row or not mem_row.get("memory_enabled"): return
         prompt = (
-            "Extract 0-4 memorable facts about the USER from this conversation. "
-            "Return ONLY valid JSON array: [{\"key\":\"snake_case_key\",\"value\":\"fact\",\"confidence\":0.8}]\n"
+            "Extract 0-3 durable memories about the USER only. Save long-term facts, preferences, goals, "
+            "identity/profile details, projects, tools they use, constraints, language preference, or recurring needs. "
+            "Do NOT save the user's one-off question, the assistant answer, ratings of the AI, uploaded file names, "
+            "web search results, document contents, temporary tasks, yes/no replies, or generic facts not about the user. "
+            "Never use keys like user_input, user_query, user_question, ai_answer, ai_rating, processed_document. "
+            "Return ONLY valid JSON array: [{\"key\":\"snake_case_key\",\"value\":\"short durable user fact\",\"confidence\":0.8}]\n"
             f"User said: {user_msg[:400]}\nAI replied: {ai_msg[:300]}\n"
             "If nothing memorable, return []."
         )
@@ -2991,7 +3063,8 @@ async def _auto_extract_memories(user_id: str, user_msg: str, ai_msg: str):
             key = str(item.get("key","")).strip()[:40]
             val = str(item.get("value","")).strip()[:300]
             conf = float(item.get("confidence", 0.8))
-            if key and val: await _upsert_memory(user_id, key, val, "auto", conf)
+            if key and val and _memory_is_high_quality(key, val, "auto"):
+                await _upsert_memory(user_id, key, val, "auto", conf)
     except Exception as e:
         logger.debug("[MEMORY] auto-extract: %s", e)
 
@@ -3013,11 +3086,20 @@ RESPONSE GUIDELINES:
 • For connector results, present data in clean tables or structured lists
 • For code, always include the language tag in code blocks"""
 
+_ANTI_HALLUCINATION_PROMPT = """[Evidence and anti-hallucination rules]
+- Do not invent facts, names, files, document contents, web sources, tool results, prices, dates, or citations.
+- If the needed evidence is not in the current message, JAZZ memory, retrieved documents, attached files/images, web results, or tool output, say what is missing and ask for it.
+- For uploaded documents, answer only from retrieved/processed document context. If no relevant excerpt is provided, say you cannot verify it from the processed docs yet.
+- For web answers, cite only URLs provided in the live web search context. Never fabricate links.
+- For images/files, mention uncertainty when extraction is partial or low-confidence.
+- Prefer current user text over older memory if they conflict."""
+
 _LOCAL_JAZZ_FAST_SYSTEM_PROMPT = (
     "You are Jazz AI, a direct assistant. Answer in the user's language. "
     "For greetings and simple questions, reply in one short natural answer. "
     "Use provided tool, web, image, or document context when it is present. "
-    "Do not invent the user's name."
+    "Do not invent the user's name or facts. If evidence is missing, say so clearly. "
+    "Use JAZZ memory only as user-specific context, and prefer the current message if it conflicts."
 )
 
 _GENERIC_PROFILE_NAMES = {"jazz", "jazzai", "jazz ai", "admin", "user", "test", "client", "account"}
@@ -3120,6 +3202,56 @@ async def _identity_recall_reply(user_id: str, message: str, user_claims: Option
         return f"Your name is {name}. I got it from {source}."
     return "I do not have a reliable name saved for you yet. Add it in your profile or tell me “my name is ...”, and I will remember it."
 
+_PRIVATE_FACT_PATTERNS: Tuple[Tuple[re.Pattern, str], ...] = (
+    (re.compile(r"\bpassport(?:\s+(?:number|no|id))?\b", re.I), "passport number"),
+    (re.compile(r"\b(?:aadhaar|aadhar)\b", re.I), "Aadhaar number"),
+    (re.compile(r"\bpan(?:\s+(?:card|number|no))?\b", re.I), "PAN number"),
+    (re.compile(r"\b(?:ssn|social security)\b", re.I), "SSN"),
+    (re.compile(r"\b(?:bank|account|iban|routing)\s+(?:number|no|details?)\b", re.I), "bank details"),
+    (re.compile(r"\b(?:credit|debit)\s+card\b", re.I), "card details"),
+    (re.compile(r"\b(?:otp|one[-\s]?time password|verification code)\b", re.I), "verification code"),
+    (re.compile(r"\b(?:password|passcode|pin)\b", re.I), "password or PIN"),
+    (re.compile(r"\b(?:private|personal)\s+(?:file|document|folder|data)\b", re.I), "private file or document"),
+)
+
+def _is_personal_fact_lookup(text: str) -> bool:
+    t = re.sub(r"\s+", " ", (text or "").strip().lower())
+    if not t or "my" not in t:
+        return False
+    lookup_verbs = (
+        "what is", "what's", "tell me", "show me", "give me", "find my",
+        "do you know", "do u know", "remember", "recall", "try to remember",
+    )
+    return any(v in t for v in lookup_verbs)
+
+async def _verified_context_missing_reply(user_id: str, message: str, user_claims: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """Deterministic guard for private/user-specific facts the model must not guess."""
+    if not _is_personal_fact_lookup(message):
+        return None
+    t = re.sub(r"\s+", " ", (message or "").strip().lower())
+    if _is_name_recall_query(t):
+        return None
+    user_row = await db_fetchone("SELECT email,full_name FROM users WHERE id=?", (user_id,))
+    if re.search(r"\bmy\s+(?:email|mail|email id|mail id)\b", t):
+        email = (user_row or {}).get("email") or (user_claims or {}).get("email") or ""
+        return f"Your email is {email}." if email else "I do not have a verified email for this account."
+
+    matched_labels = [label for pattern, label in _PRIVATE_FACT_PATTERNS if pattern.search(t)]
+    if not matched_labels:
+        return None
+
+    mems = await _get_memories(user_id, 8, query=message)
+    for mem in mems:
+        haystack = f"{mem.get('key','')} {mem.get('value','')}".lower()
+        if any(label.split()[0].lower() in haystack for label in matched_labels):
+            return None
+    label = matched_labels[0]
+    return (
+        f"I do not have your {label} in verified account context, JAZZ memory, "
+        "attached files, processed documents, or tool output, so I cannot answer it reliably. "
+        "Send that information or upload the relevant document if you want me to use it."
+    )
+
 def _authenticated_user_context(row: Optional[Dict[str, Any]]) -> str:
     name = _display_name_from_user_row(row)
     email = (row.get("email") or "").strip() if row else ""
@@ -3155,6 +3287,7 @@ async def _build_context(session_id: str, user_id: str, new_msg: str,
         if local_fast
         else [_SYSTEM_PROMPT, f"Today: {datetime.now(timezone.utc).strftime('%A, %B %d, %Y %H:%M UTC')}"]
     )
+    sys_parts.append(_ANTI_HALLUCINATION_PROMPT)
     user_row = await db_fetchone("SELECT email,full_name FROM users WHERE id=?", (user_id,))
     if local_fast:
         user_name = _display_name_from_user_row(user_row)
@@ -3165,7 +3298,7 @@ async def _build_context(session_id: str, user_id: str, new_msg: str,
         )
     else:
         sys_parts.append(_authenticated_user_context(user_row))
-    mems = await _get_memories(user_id)
+    mems = await _get_memories(user_id, query=new_msg)
     if mems:
         if local_fast:
             compact = [
@@ -7398,6 +7531,28 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
                 yield f"data: {json.dumps({'type':'done','message_id':mid,'content':identity_reply,'latency_ms':elapsed,'tokens':{'input':_count_tokens(req.message),'output':_count_tokens(identity_reply)},'mode':'normal','context':context,'model_id':active_model_id,'model_label':await _model_display_name(active_model_id)})}\n\n"
                 return
 
+            missing_context_reply = await _verified_context_missing_reply(uid, req.message, user)
+            if missing_context_reply:
+                ev = {"type":"tool_result","tool":"evidence_guard","label":"No verified context found for that private detail","count":0}
+                tool_log.append(ev)
+                yield f"data: {json.dumps(ev)}\n\n"
+                async for chunk in _stream_text(missing_context_reply):
+                    yield f"data: {chunk}\n\n"
+                elapsed = int((time.time()-t0)*1000)
+                now = _utcnow(); mid = _new_id()
+                await db_execute(
+                    "INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,created_at) VALUES(?,?,?,'user',?,?,?)",
+                    (_new_id(), sid, uid, req.message, active_model_id, now))
+                await db_execute(
+                    "INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,latency_ms,tool_calls_json,mode,created_at)"
+                    " VALUES(?,?,?,'assistant',?,?,?,?,'guard',?)",
+                    (mid, sid, uid, missing_context_reply, active_model_id, elapsed, json.dumps(tool_log), now))
+                await db_execute("UPDATE chat_sessions SET model_id=?,last_message_at=?,turn_count=turn_count+1,updated_at=? WHERE id=?",
+                                 (active_model_id, now, now, sid))
+                context = await _context_window_status(sid, uid, active_model_id)
+                yield f"data: {json.dumps({'type':'done','message_id':mid,'content':missing_context_reply,'latency_ms':elapsed,'tokens':{'input':_count_tokens(req.message),'output':_count_tokens(missing_context_reply)},'mode':'guard','context':context,'model_id':active_model_id,'model_label':await _model_display_name(active_model_id)})}\n\n"
+                return
+
             latex_req = _latex_compile_request_from_message(req.message)
             if latex_req:
                 start_ev = {"type":"tool_start","tool":"latex","label":"Compiling LaTeX to PDF" if latex_req.output == "pdf" else "Preparing LaTeX source"}
@@ -7763,6 +7918,19 @@ async def chat_message(req: ChatReq, background: BackgroundTasks, user: Dict = D
         await db_execute("UPDATE chat_sessions SET model_id=?,last_message_at=?,turn_count=turn_count+1,updated_at=? WHERE id=?",(active_model_id,now,now,sid))
         context = await _context_window_status(sid, uid, active_model_id)
         return {"message_id":mid,"content":identity_reply,"session_id":sid,"latency_ms":elapsed,"context":context,"model_id":active_model_id,"model_label":await _model_display_name(active_model_id)}
+
+    missing_context_reply = await _verified_context_missing_reply(uid, req.message, user)
+    if missing_context_reply:
+        elapsed = int((time.time()-t0)*1000); now = _utcnow(); mid = _new_id()
+        tool_log.append({"type":"tool_result","tool":"evidence_guard","label":"No verified context found for that private detail","count":0})
+        await db_execute("INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,created_at) VALUES(?,?,?,'user',?,?,?)",
+                         (_new_id(), sid, uid, req.message, active_model_id, now))
+        await db_execute("INSERT INTO chat_history(id,session_id,user_id,role,content,model_used,latency_ms,tool_calls_json,mode,created_at) VALUES(?,?,?,'assistant',?,?,?,?,'guard',?)",
+                         (mid, sid, uid, missing_context_reply, active_model_id, elapsed, json.dumps(tool_log), now))
+        await db_execute("UPDATE chat_sessions SET model_id=?,last_message_at=?,turn_count=turn_count+1,updated_at=? WHERE id=?",(active_model_id,now,now,sid))
+        context = await _context_window_status(sid, uid, active_model_id)
+        return {"message_id":mid,"content":missing_context_reply,"session_id":sid,"latency_ms":elapsed,"context":context,"model_id":active_model_id,"model_label":await _model_display_name(active_model_id)}
+
     effective_message, _ = await _build_image_context(req, uid, active_model_id, tool_log)
     messages = await _build_context(sid, uid, effective_message, use_rag, active_model_id,
                                     web_results, plan_mode, _format_skill_context(skills),
