@@ -144,6 +144,11 @@ ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "jasmeet.15069@gmail.com")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Acx@POWER@12345jassi789")
 GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
 HF_TOKEN       = os.getenv("HF_TOKEN", "")
+HF_TOKEN_BACKUP = os.getenv("HF_TOKEN_BACKUP", "")
+HF_TOKEN_BACKUPS = os.getenv("HF_TOKEN_BACKUPS", "")
+HF_TOKENS      = os.getenv("HF_TOKENS", "")
+HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY", "")
+HUGGINGFACEHUB_API_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN", "")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
 
 # ── OAuth Provider Credentials ────────────────────────────────────────────────
@@ -203,7 +208,9 @@ LIVY_USER          = os.getenv("LIVY_USER", "")
 LIVY_PASSWORD      = os.getenv("LIVY_PASSWORD", "")
 
 _RUNTIME_ENV_KEYS = [
-    "ADMIN_EMAIL", "ADMIN_PASSWORD", "GROQ_API_KEY", "HF_TOKEN", "NVIDIA_API_KEY",
+    "ADMIN_EMAIL", "ADMIN_PASSWORD", "GROQ_API_KEY", "HF_TOKEN", "HF_TOKEN_BACKUP",
+    "HF_TOKEN_BACKUPS", "HF_TOKENS", "HUGGINGFACE_API_KEY", "HUGGINGFACEHUB_API_TOKEN",
+    "NVIDIA_API_KEY",
     "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
     "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET",
     "GITLAB_CLIENT_ID", "GITLAB_CLIENT_SECRET",
@@ -2012,6 +2019,26 @@ async def _check_rate_limit(user: Dict, resource: str) -> None:
 def _groq_client() -> OpenAI:
     return OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
+def _split_api_tokens(raw: str) -> List[str]:
+    if not raw:
+        return []
+    return [t.strip() for t in re.split(r"[\s,;]+", str(raw)) if t.strip()]
+
+def _hf_api_keys(primary: str = "") -> List[str]:
+    keys: List[str] = []
+    for raw in (
+        primary,
+        HF_TOKEN,
+        HUGGINGFACE_API_KEY,
+        HUGGINGFACEHUB_API_TOKEN,
+        HF_TOKEN_BACKUP,
+        HF_TOKEN_BACKUPS,
+        HF_TOKENS,
+    ):
+        keys.extend(_split_api_tokens(raw))
+    seen: Set[str] = set()
+    return [k for k in keys if k and not (k in seen or seen.add(k))]
+
 async def _get_model_client(model_id: str) -> Tuple[OpenAI, str]:
     model_id = _canonical_model_id(model_id)
     row = await db_fetchone("SELECT * FROM ai_models WHERE (id=? OR name=?) AND is_active=1 LIMIT 1",
@@ -2024,7 +2051,7 @@ async def _get_model_client(model_id: str) -> Tuple[OpenAI, str]:
             api_key = ""
         base_url = row["base_url"] or _PROVIDER_DEFAULTS.get(row["provider"], "")
         if row["provider"] == "huggingface" and not api_key:
-            api_key = HF_TOKEN
+            api_key = (_hf_api_keys("") or [""])[0]
         if row["provider"] == "nvidia" and not api_key:
             api_key = NVIDIA_API_KEY
         if row["provider"] == "nvidia":
@@ -2032,7 +2059,7 @@ async def _get_model_client(model_id: str) -> Tuple[OpenAI, str]:
         return OpenAI(api_key=api_key or "none", base_url=base_url), row["model_name"]
     if model_id in HUGGINGFACE_MODELS:
         meta = HUGGINGFACE_MODELS[model_id]
-        return OpenAI(api_key=HF_TOKEN or "none", base_url=_PROVIDER_DEFAULTS["huggingface"]), meta["model_name"]
+        return OpenAI(api_key=(_hf_api_keys("") or ["none"])[0], base_url=_PROVIDER_DEFAULTS["huggingface"]), meta["model_name"]
     model_name = model_id if model_id in GROQ_MODELS else "llama-3.3-70b-versatile"
     return _groq_client(), model_name
 
@@ -2257,6 +2284,53 @@ async def _llm_text_once(messages: List[Dict], model_id: str,
                 chunks.append(payload)
                 provider_model = meta.get("provider_model") or provider_model
         return "".join(chunks), _canonical_model_id(model_id), provider_model
+    mid = _canonical_model_id(model_id)
+    hf_row = await db_fetchone(
+        "SELECT * FROM ai_models WHERE (id=? OR name=? OR model_name=?) AND is_active=1 LIMIT 1",
+        (mid, mid, mid))
+    if hf_row and str(hf_row["provider"]).lower() == "huggingface":
+        try:
+            creds = _decrypt(hf_row["encrypted_api_key"])
+            primary_key = creds.get("key", creds.get("api_key", ""))
+        except Exception:
+            primary_key = ""
+        keys = _hf_api_keys(primary_key) or ["none"]
+        base_url = hf_row["base_url"] or _PROVIDER_DEFAULTS["huggingface"]
+        extra_body = await _chat_completion_extra_body(mid)
+        last_error: Optional[Exception] = None
+        for idx, api_key in enumerate(keys):
+            try:
+                if idx > 0:
+                    logger.info("[LLM] HF completion retrying %s with backup token #%s", mid, idx)
+                client = OpenAI(api_key=api_key, base_url=base_url)
+                resp = await asyncio.get_running_loop().run_in_executor(
+                    _executor,
+                    lambda c=client, m=hf_row["model_name"], e=extra_body: c.chat.completions.create(
+                        model=m, messages=messages, max_tokens=max_tokens, temperature=temperature,
+                        **({"extra_body": e} if e else {})))
+                return resp.choices[0].message.content or "", mid, hf_row["model_name"]
+            except Exception as exc:
+                last_error = exc
+                logger.warning("[LLM] HF completion token #%s failed for %s: %s", idx + 1, mid, exc)
+        raise last_error or RuntimeError("No Hugging Face tokens available")
+    if mid in HUGGINGFACE_MODELS:
+        meta = HUGGINGFACE_MODELS[mid]
+        keys = _hf_api_keys("") or ["none"]
+        last_error: Optional[Exception] = None
+        for idx, api_key in enumerate(keys):
+            try:
+                if idx > 0:
+                    logger.info("[LLM] HF builtin completion retrying %s with backup token #%s", mid, idx)
+                client = OpenAI(api_key=api_key, base_url=_PROVIDER_DEFAULTS["huggingface"])
+                resp = await asyncio.get_running_loop().run_in_executor(
+                    _executor,
+                    lambda c=client, m=meta["model_name"]: c.chat.completions.create(
+                        model=m, messages=messages, max_tokens=max_tokens, temperature=temperature))
+                return resp.choices[0].message.content or "", mid, meta["model_name"]
+            except Exception as exc:
+                last_error = exc
+                logger.warning("[LLM] HF builtin completion token #%s failed for %s: %s", idx + 1, mid, exc)
+        raise last_error or RuntimeError("No Hugging Face tokens available")
     client, model_name = await _get_model_client(model_id)
     extra_body = await _chat_completion_extra_body(model_id)
     resp = await asyncio.get_running_loop().run_in_executor(
@@ -2526,14 +2600,15 @@ async def _hf_stream_model_meta(model_id: str) -> Optional[Dict[str, Any]]:
         api_key = creds.get("key", creds.get("api_key", ""))
     except Exception:
         api_key = ""
-    api_key = api_key or HF_TOKEN
-    if not api_key:
+    api_keys = _hf_api_keys(api_key)
+    if not api_keys:
         return None
     return {
         "model_id": mid,
         "model_name": row["model_name"],
         "label": row["name"] or row["model_name"] or mid,
-        "api_key": api_key,
+        "api_key": api_keys[0],
+        "api_keys": api_keys,
         "max_output_tokens": int(row["max_output_tokens"] or 1024),
         "temperature": float(row["temperature_default"] or 0.2),
     }
@@ -2550,25 +2625,35 @@ async def _stream_hf_text_once(messages: List[Dict], model_id: str,
     effective_temperature = float(temperature if temperature is not None else meta["temperature"])
 
     def _run_stream():
-        try:
-            client = InferenceClient(api_key=meta["api_key"])
-            stream = client.chat.completions.create(
-                model=meta["model_name"],
-                messages=messages,
-                stream=True,
-                max_tokens=effective_max_tokens,
-                temperature=effective_temperature,
-            )
-            for chunk in stream:
-                choices = getattr(chunk, "choices", None) or []
-                if not choices:
+        last_error: Optional[Exception] = None
+        keys = [k for k in (meta.get("api_keys") or [meta.get("api_key")]) if k]
+        for idx, api_key in enumerate(keys):
+            try:
+                if idx > 0:
+                    logger.info("[LLM] HF stream retrying %s with backup token #%s", meta["model_id"], idx)
+                client = InferenceClient(api_key=api_key)
+                stream = client.chat.completions.create(
+                    model=meta["model_name"],
+                    messages=messages,
+                    stream=True,
+                    max_tokens=effective_max_tokens,
+                    temperature=effective_temperature,
+                )
+                for chunk in stream:
+                    choices = getattr(chunk, "choices", None) or []
+                    if not choices:
+                        continue
+                    delta = getattr(choices[0].delta, "content", "") or ""
+                    if delta:
+                        loop.call_soon_threadsafe(queue.put_nowait, ("delta", delta))
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+                return
+            except Exception as exc:
+                last_error = exc
+                logger.warning("[LLM] HF token #%s failed for %s: %s", idx + 1, meta["model_id"], exc)
+                if idx + 1 < len(keys):
                     continue
-                delta = getattr(choices[0].delta, "content", "") or ""
-                if delta:
-                    loop.call_soon_threadsafe(queue.put_nowait, ("delta", delta))
-            loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
-        except Exception as exc:
-            loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
+        loop.call_soon_threadsafe(queue.put_nowait, ("error", last_error or RuntimeError("No Hugging Face tokens available")))
 
     loop.run_in_executor(_executor, _run_stream)
     while True:
