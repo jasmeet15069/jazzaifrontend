@@ -410,6 +410,22 @@ DEFAULT_DB_MODELS = {
         "description":"Moonshot AI Kimi K2.6 via NVIDIA NIM/OpenAI-compatible chat completions with thinking enabled.",
         "tags":["nvidia","moonshot","kimi","thinking","code","most-intelligent"],
     },
+    "jazz-ai-testing": {
+        "name":"jazz-ai-testing",
+        "provider":"local_generate",
+        "base_url":"http://127.0.0.1:18080",
+        "model_name":"/opt/texting-coding-model/model",
+        "context_length":4096,
+        "max_output_tokens":48,
+        "temperature_default":0.7,
+        "is_active":True,
+        "is_default":False,
+        "is_fast":True,
+        "is_vision":False,
+        "is_code":True,
+        "description":"Local texting/coding test model served by texting-coding-llm.service on 127.0.0.1:18080.",
+        "tags":["local","testing","texting","coding","cpu","private"],
+    },
 }
 
 IMAGE_TO_TEXT_MODEL_ID = "hf-router-qwen-qwen2-5-vl-72b-instruct-ovhcloud"
@@ -421,6 +437,7 @@ _PROVIDER_DEFAULTS: Dict[str,str] = {
     "openrouter":  "https://openrouter.ai/api/v1",
     "huggingface": "https://router.huggingface.co/v1",
     "nvidia":      "https://integrate.api.nvidia.com/v1",
+    "local_generate": "http://127.0.0.1:18080",
     "ollama":      "http://localhost:11434/v1",
     "mistral":     "https://api.mistral.ai/v1",
     "cohere":      "https://api.cohere.ai/compatibility/v1",
@@ -2272,6 +2289,84 @@ async def _auto_route_model(preferred_model_id: str, message: str,
             return mid, "long_input"
     return candidates[0] if candidates else preferred, "long_input"
 
+def _message_content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: List[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                if item.get("type") == "text":
+                    parts.append(str(item.get("text") or ""))
+                elif item.get("text"):
+                    parts.append(str(item.get("text")))
+            elif item is not None:
+                parts.append(str(item))
+        return "\n".join(p for p in parts if p)
+    return "" if content is None else str(content)
+
+def _messages_to_local_generate_prompt(messages: List[Dict]) -> str:
+    lines: List[str] = []
+    for msg in messages[-8:]:
+        role = str(msg.get("role") or "user").lower()
+        if role == "system":
+            continue
+        text = _message_content_to_text(msg.get("content")).strip()
+        if not text:
+            continue
+        if len(text) > 2000:
+            text = text[-2000:]
+        if role == "assistant":
+            lines.append("Assistant: " + text)
+        else:
+            lines.append("User: " + text)
+    if not lines or not lines[-1].startswith("Assistant:"):
+        lines.append("Assistant:")
+    return "\n".join(lines)
+
+def _strip_local_generate_echo(text: str, prompt: str) -> str:
+    out = (text or "").strip()
+    prompt = (prompt or "").strip()
+    if prompt and out.startswith(prompt):
+        out = out[len(prompt):].strip()
+    out = re.sub(r"^(?:Assistant:|assistant:)\s*", "", out).strip()
+    return out or (text or "").strip()
+
+async def _local_generate_text_once(messages: List[Dict], row: Dict[str, Any],
+                                    max_tokens: int = 512) -> Tuple[str, str, str]:
+    base = (row["base_url"] or _PROVIDER_DEFAULTS["local_generate"]).rstrip("/")
+    prompt = _messages_to_local_generate_prompt(messages)
+    row_limit = int(row.get("max_output_tokens") or 48)
+    token_limit = max(8, min(int(max_tokens or row_limit), row_limit, 80))
+
+    def _call() -> str:
+        payload = json.dumps({
+            "prompt": prompt,
+            "max_new_tokens": token_limit,
+            "temperature": float(row.get("temperature_default") or 0.7),
+            "top_p": 0.9,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            base + "/generate",
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return raw
+        if isinstance(data, dict):
+            for key in ("text", "generated_text", "response", "content", "output"):
+                if data.get(key):
+                    return str(data[key])
+        return raw
+
+    raw_text = await asyncio.get_running_loop().run_in_executor(_executor, _call)
+    return _strip_local_generate_echo(raw_text, prompt), _canonical_model_id(row["id"]), row["model_name"]
+
 async def _llm_text_once(messages: List[Dict], model_id: str,
                          max_tokens: int = 1024,
                          temperature: float = 0.7) -> Tuple[str, str, str]:
@@ -2288,6 +2383,8 @@ async def _llm_text_once(messages: List[Dict], model_id: str,
     hf_row = await db_fetchone(
         "SELECT * FROM ai_models WHERE (id=? OR name=? OR model_name=?) AND is_active=1 LIMIT 1",
         (mid, mid, mid))
+    if hf_row and str(hf_row["provider"]).lower() == "local_generate":
+        return await _local_generate_text_once(messages, hf_row, max_tokens)
     if hf_row and str(hf_row["provider"]).lower() == "huggingface":
         try:
             creds = _decrypt(hf_row["encrypted_api_key"])
