@@ -413,18 +413,18 @@ DEFAULT_DB_MODELS = {
     "jazz-ai-testing": {
         "name":"jazz-ai-testing",
         "provider":"local_generate",
-        "base_url":"http://127.0.0.1:18080",
-        "model_name":"/opt/texting-coding-model/model",
+        "base_url":"http://127.0.0.1:18081",
+        "model_name":"Qwen/Qwen2.5-0.5B-Instruct",
         "context_length":4096,
-        "max_output_tokens":48,
-        "temperature_default":0.7,
+        "max_output_tokens":128,
+        "temperature_default":0.0,
         "is_active":True,
         "is_default":False,
         "is_fast":True,
         "is_vision":False,
         "is_code":True,
-        "description":"Local texting/coding test model served by texting-coding-llm.service on 127.0.0.1:18080.",
-        "tags":["local","testing","texting","coding","cpu","private"],
+        "description":"Private Azure-hosted Qwen 0.5B instruct runtime tunnelled to the Jazz server for jazz-ai-testing.",
+        "tags":["local","azure","testing","qwen","instruct","coding","cpu","private"],
     },
 }
 
@@ -2337,7 +2337,7 @@ async def _local_generate_text_once(messages: List[Dict], row: Dict[str, Any],
     base = (row["base_url"] or _PROVIDER_DEFAULTS["local_generate"]).rstrip("/")
     prompt = _messages_to_local_generate_prompt(messages)
     row_limit = int(row.get("max_output_tokens") or 48)
-    token_limit = max(8, min(int(max_tokens or row_limit), row_limit, 80))
+    token_limit = max(8, min(int(max_tokens or row_limit), row_limit, 128))
 
     def _call() -> str:
         payload = json.dumps({

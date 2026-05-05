@@ -1,0 +1,14 @@
+[Unit]
+Description=Private tunnel for JAZZ AI Testing LLM
+After=network-online.target jazz-ai-testing-llm.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=azureuser
+ExecStart=/usr/bin/ssh -i /home/azureuser/.ssh/jazz_ai_testing_tunnel_ed25519 -N -T -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 127.0.0.1:18081:127.0.0.1:18080 root@45.79.124.28
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

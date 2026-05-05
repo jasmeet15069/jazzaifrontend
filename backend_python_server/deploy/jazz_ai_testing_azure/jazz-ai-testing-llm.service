@@ -1,0 +1,21 @@
+[Unit]
+Description=JAZZ AI Testing LLM API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=azureuser
+WorkingDirectory=/home/azureuser/llm-0_5b-from-scratch/jazz_ai_testing_service
+Environment=PATH=/home/azureuser/llm-0_5b-from-scratch/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=HF_HOME=/home/azureuser/.cache/huggingface
+Environment=MODEL_ID=Qwen/Qwen2.5-0.5B-Instruct
+Environment=TORCH_NUM_THREADS=2
+Environment=DEFAULT_MAX_NEW_TOKENS=128
+Environment=TRAINING_EXAMPLES_FILE=/home/azureuser/llm-0_5b-from-scratch/sample_data/texting_coding_train.txt
+ExecStart=/home/azureuser/llm-0_5b-from-scratch/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 18080
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
