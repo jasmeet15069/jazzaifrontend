@@ -2495,6 +2495,13 @@ async def _llm_text_with_fallback(messages: List[Dict], model_id: str,
         except Exception as exc:
             logger.warning("[LLM] %s failed during smart fallback: %s", mid, exc)
             errors.append({"model_id":mid, "error":str(exc)[:500]})
+            events.append({
+                "type":"tool_error",
+                "tool":"model",
+                "model_id":mid,
+                "model_label":label,
+                "label":_provider_failure_label(label, exc),
+            })
         previous = mid
     msg = ("I could not get a response from any configured model. "
            "Please check Admin > Env/API keys or add another active model.")
@@ -2572,6 +2579,24 @@ async def _stream_hf_text_once(messages: List[Dict], model_id: str,
             raise payload
         else:
             break
+
+def _provider_failure_label(label: str, exc: Exception) -> str:
+    err = str(exc or "")
+    lower = err.lower()
+    if "402" in err or "payment required" in lower or "depleted your monthly included credits" in lower:
+        return (
+            f"{label} is unavailable because Hugging Face Inference Provider credits are depleted. "
+            "Trying the next working model..."
+        )
+    if "401" in err or "unauthorized" in lower or "invalid token" in lower:
+        return f"{label} API key is not authorized. Trying the next working model..."
+    if "404" in err or "not found" in lower:
+        return f"{label} provider/model route was not found. Trying the next working model..."
+    if "429" in err or "rate limit" in lower or "too many requests" in lower:
+        return f"{label} is rate limited. Trying the next working model..."
+    if "timeout" in lower or "timed out" in lower:
+        return f"{label} timed out. Trying the next working model..."
+    return f"{label} stream failed. Trying the next working model..."
 
 async def _nvidia_stream_model_meta(model_id: str) -> Optional[Dict[str, Any]]:
     mid = _canonical_model_id(model_id)
@@ -7803,7 +7828,12 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
                         logger.warning("[CHAT] NVIDIA stream returned empty response for %s", active_model_id)
                 except Exception as exc:
                     logger.warning("[CHAT] NVIDIA direct stream failed for %s: %s", active_model_id, exc)
-                    err_ev = {"type":"tool_error","tool":"model","label":f"{nvidia_meta['label']} stream failed. Trying fallback..."}
+                    err_ev = {
+                        "type":"tool_error","tool":"model",
+                        "model_id":active_model_id,
+                        "model_label":nvidia_meta["label"],
+                        "label":_provider_failure_label(nvidia_meta["label"], exc),
+                    }
                     tool_log.append(err_ev)
                     yield f"data: {json.dumps(err_ev)}\n\n"
                     candidates = await _model_fallback_candidates(active_model_id, tok_in, uid)
@@ -7823,9 +7853,16 @@ async def chat_stream_post(req: ChatReq, user: Dict = Depends(_get_current_user)
                         logger.warning("[CHAT] HF stream returned empty response for %s", active_model_id)
                 except Exception as exc:
                     logger.warning("[CHAT] HF direct stream failed for %s: %s", active_model_id, exc)
-                    err_ev = {"type":"tool_error","tool":"model","label":f"{hf_meta['label']} stream failed. Trying fallback..."}
+                    err_ev = {
+                        "type":"tool_error","tool":"model",
+                        "model_id":active_model_id,
+                        "model_label":hf_meta["label"],
+                        "label":_provider_failure_label(hf_meta["label"], exc),
+                    }
                     tool_log.append(err_ev)
                     yield f"data: {json.dumps(err_ev)}\n\n"
+                    candidates = await _model_fallback_candidates(active_model_id, tok_in, uid)
+                    fallback_model_id = next((c for c in candidates if c != active_model_id), active_model_id)
 
             if not streamed_direct:
                 llm_result = await _llm_text_with_fallback(

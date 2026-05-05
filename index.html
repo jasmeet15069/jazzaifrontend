@@ -3673,6 +3673,9 @@ async function _sendChatInternal(msg, attachments = []) {
       updateModelPill();
       loadContextStatus();
     }
+    if (d.type === 'tool_error' && d.tool === 'model' && d.model_id) {
+      setModelHealth(d.model_id, 'bad', d.label || 'model failed');
+    }
     liveToolEvents.push(d);
     const el = document.getElementById(`${aiId}-tools`);
     if (el) {
