@@ -413,8 +413,8 @@ DEFAULT_DB_MODELS = {
     "jazz-ai-testing": {
         "name":"Jazz AI V1.0",
         "provider":"local_generate",
-        "base_url":"http://127.0.0.1:18081",
-        "model_name":"Qwen/Qwen2.5-0.5B-Instruct",
+        "base_url":"http://127.0.0.1:18080",
+        "model_name":"JazzAI-V1.0-from-scratch-GPT2",
         "context_length":4096,
         "max_output_tokens":128,
         "temperature_default":0.0,
@@ -423,8 +423,8 @@ DEFAULT_DB_MODELS = {
         "is_fast":True,
         "is_vision":False,
         "is_code":True,
-        "description":"Private Qwen-backed local LLM runtime displayed as Jazz AI V1.0. Internal compatibility ID remains jazz-ai-testing.",
-        "tags":["local","azure","jazz-ai-v1","qwen","instruct","coding","cpu","private","coach","hindi"],
+        "description":"Private from-scratch GPT-style Jazz AI V1.0 runtime. Internal compatibility ID remains jazz-ai-testing.",
+        "tags":["local","from-scratch","jazz-ai-v1","gpt2","coding","cpu","private","coach","hindi"],
     },
 }
 
@@ -2395,6 +2395,15 @@ def _local_lines(title: str, options: List[str], reason: str, lang: str) -> str:
 def _local_generate_coach_answer(messages: List[Dict]) -> Optional[str]:
     text = _local_generate_last_user_text(messages)
     lang = _local_detect_language(text)
+    low = _local_norm(text)
+    if re.fullmatch(r"(hi|hello|hey|yo|hii|hiii|namaste|namaskar)", low):
+        if lang == "hi":
+            return "Haan, main Jazz AI V1.0 hoon. Batao, kis cheez mein help chahiye?"
+        return "Hi, I am Jazz AI V1.0. Tell me what you want to work on."
+    if re.search(r"\b(who are you|what are you|your name|model are you|kaun ho|tum kaun)\b", low):
+        if lang == "hi":
+            return "Main Jazz AI V1.0 hoon, ek private from-scratch local model jisme Hindi/Hinglish, coding, tools, aur dating/texting coach routing added hai."
+        return "I am Jazz AI V1.0, a private from-scratch local model with added routing for Hindi/Hinglish, coding, tools, and dating/texting coaching."
     if _local_is_language_switch(text):
         return "Haan, ab main Hindi/Hinglish mein baat karunga. Batao, kis cheez mein help chahiye?"
     if lang == "fr" and not _local_is_dating_intent(text):
@@ -2457,7 +2466,7 @@ def _local_generate_coach_answer(messages: List[Dict]) -> Optional[str]:
 def _local_generate_system_context(last_user: str) -> str:
     lang = _local_detect_language(last_user)
     text = (
-        "You are Jazz AI V1.0, a private Qwen-backed local LLM. "
+        "You are Jazz AI V1.0, a private from-scratch local LLM. "
         "Answer the current user directly. Default to Hindi/Hinglish when unclear. "
         "If the user clearly uses another language, reply in that same language. "
         "For dating or texting advice, be bold, playful, concise, and respectful. "
