@@ -411,7 +411,7 @@ DEFAULT_DB_MODELS = {
         "tags":["nvidia","moonshot","kimi","thinking","code","most-intelligent"],
     },
     "jazz-ai-testing": {
-        "name":"jazz-ai-testing",
+        "name":"Jazz AI V1.0",
         "provider":"local_generate",
         "base_url":"http://127.0.0.1:18081",
         "model_name":"Qwen/Qwen2.5-0.5B-Instruct",
@@ -423,8 +423,8 @@ DEFAULT_DB_MODELS = {
         "is_fast":True,
         "is_vision":False,
         "is_code":True,
-        "description":"Private Azure-hosted Qwen 0.5B instruct runtime tunnelled to the Jazz server for jazz-ai-testing.",
-        "tags":["local","azure","testing","qwen","instruct","coding","cpu","private"],
+        "description":"Private Qwen-backed local LLM runtime displayed as Jazz AI V1.0. Internal compatibility ID remains jazz-ai-testing.",
+        "tags":["local","azure","jazz-ai-v1","qwen","instruct","coding","cpu","private","coach","hindi"],
     },
 }
 
@@ -2140,6 +2140,11 @@ _MODEL_ALIASES = {
     "jazz-ai": "local-dolphin3-qwen25-05b",
     "jazz": "local-dolphin3-qwen25-05b",
     "local-dolphin": "local-dolphin3-qwen25-05b",
+    "jazz-ai-v1": "jazz-ai-testing",
+    "jazz-ai-v1.0": "jazz-ai-testing",
+    "jazz ai v1.0": "jazz-ai-testing",
+    "qwen": "jazz-ai-testing",
+    "gwen": "jazz-ai-testing",
     "hf-dolphin": "dolphin-mistral-24b-venice-hf",
     "venice": "dolphin-mistral-24b-venice-hf",
     "dolphin-venice": "dolphin-mistral-24b-venice-hf",
@@ -2305,8 +2310,167 @@ def _message_content_to_text(content: Any) -> str:
         return "\n".join(p for p in parts if p)
     return "" if content is None else str(content)
 
+_LOCAL_HINDI_HINTS = {
+    "hindi", "hinglish", "mai", "mein", "mujhe", "bata", "batao", "bol",
+    "bolo", "kya", "kaise", "karu", "karun", "bheju", "bhejna", "ladki",
+    "usne", "usko", "baat", "reply", "message", "pyaar", "pyar",
+}
+_LOCAL_FRENCH_HINTS = {"bonjour", "francais", "français", "parle", "merci", "salut"}
+_LOCAL_SPANISH_HINTS = {"hola", "espanol", "español", "gracias", "habla"}
+_LOCAL_GERMAN_HINTS = {"hallo", "deutsch", "danke", "sprich"}
+_LOCAL_DATING_HINTS = {
+    "dating", "date", "girl", "girls", "ladki", "crush", "flirt", "flirty",
+    "text", "texting", "message", "dm", "whatsapp", "reply", "replied",
+    "seen", "haha", "nice", "opener", "first message", "interested",
+}
+_LOCAL_REJECTION_HINTS = {
+    "not interested", "no interest", "she rejected", "rejected", "reject",
+    "mana kar diya", "interested nahi", "nahi interested", "not looking",
+    "leave me", "stop texting",
+}
+
+def _local_norm(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+def _local_has_devanagari(text: str) -> bool:
+    return bool(re.search(r"[\u0900-\u097f]", text or ""))
+
+def _local_word_hits(text: str, words: set) -> int:
+    low = _local_norm(text)
+    found = 0
+    for word in words:
+        if " " in word:
+            found += 1 if word in low else 0
+        else:
+            found += 1 if re.search(rf"\b{re.escape(word)}\b", low) else 0
+    return found
+
+def _local_detect_language(text: str) -> str:
+    low = _local_norm(text)
+    if _local_has_devanagari(text) or _local_word_hits(low, _LOCAL_HINDI_HINTS) >= 1:
+        return "hi"
+    if _local_word_hits(low, _LOCAL_FRENCH_HINTS) >= 1:
+        return "fr"
+    if _local_word_hits(low, _LOCAL_SPANISH_HINTS) >= 1:
+        return "es"
+    if _local_word_hits(low, _LOCAL_GERMAN_HINTS) >= 1:
+        return "de"
+    return "en" if re.search(r"[a-z]{3,}", low) else "hi"
+
+def _local_is_language_switch(text: str) -> bool:
+    low = _local_norm(text)
+    return bool(
+        re.search(r"\b(hindi|hinglish)\b.*\b(bol|bolo|baat|talk|speak|reply)\b", low)
+        or re.search(r"\b(bol|bolo|baat|talk|speak|reply)\b.*\b(hindi|hinglish)\b", low)
+        or "hindi mai bol" in low
+        or "hindi mein baat" in low
+    )
+
+def _local_is_dating_intent(text: str) -> bool:
+    return _local_word_hits(text, _LOCAL_DATING_HINTS) >= 1
+
+def _local_is_rejection(text: str) -> bool:
+    return _local_word_hits(text, _LOCAL_REJECTION_HINTS) >= 1
+
+def _local_is_first_message(text: str) -> bool:
+    low = _local_norm(text)
+    return (
+        "first message" in low
+        or "opener" in low
+        or "pehla message" in low
+        or "kya bheju" in low
+        or "message kya" in low
+    )
+
+def _local_is_haha_reply(text: str) -> bool:
+    low = _local_norm(text)
+    return any(x in low for x in ("haha nice", "she replied haha", "she said haha", "reply haha", "nice"))
+
+def _local_lines(title: str, options: List[str], reason: str, lang: str) -> str:
+    numbered = "\n".join(f"{i}. {line}" for i, line in enumerate(options, 1))
+    if lang == "hi":
+        return f"{title}\n\n{numbered}\n\nKyu: {reason}"
+    return f"{title}\n\n{numbered}\n\nWhy: {reason}"
+
+def _local_generate_coach_answer(messages: List[Dict]) -> Optional[str]:
+    text = _local_generate_last_user_text(messages)
+    lang = _local_detect_language(text)
+    if _local_is_language_switch(text):
+        return "Haan, ab main Hindi/Hinglish mein baat karunga. Batao, kis cheez mein help chahiye?"
+    if lang == "fr" and not _local_is_dating_intent(text):
+        return "Oui, je peux parler francais. Dis-moi ce que tu veux faire, et je te repondrai clairement."
+    if lang == "es" and not _local_is_dating_intent(text):
+        return "Si, puedo hablar espanol. Dime que necesitas y te respondo claro."
+    if lang == "de" and not _local_is_dating_intent(text):
+        return "Ja, ich kann Deutsch sprechen. Sag mir, wobei ich helfen soll."
+    if not _local_is_dating_intent(text):
+        return None
+    if _local_is_rejection(text):
+        if lang == "hi":
+            return "Agar usne clearly bola ki interested nahi hai, graceful close kar: 'All good, thanks for being honest. Take care.' Phir move on. Pressure ya chase mat kar."
+        return "If she clearly says she is not interested, close respectfully: 'All good, thanks for being honest. Take care.' Then move on. Do not pressure or chase."
+    if _local_is_first_message(text):
+        return _local_lines(
+            "Ye bhej:",
+            [
+                "Teri vibe dekh ke lag raha hai tu sweet dikhti hai, par thodi trouble bhi hai.",
+                "Wait, tu itni calm dikhti hai ya bas profile ka illusion hai?",
+                "Tu woh type lagti hai jo innocent face bana ke sabse zyada chaos karti hai.",
+            ],
+            "Generic hi/hello boring hai. Light assumption curiosity create karti hai.",
+            "hi",
+        )
+    if _local_is_haha_reply(text):
+        if lang == "hi":
+            return _local_lines(
+                "Reply options:",
+                [
+                    "Haha nice? Bas itna hi? Mujhe laga tumhare paas thoda better comeback hoga.",
+                    "Nice matlab impressed ho ya politely judge kar rahi ho?",
+                    "Theek hai, ab tumhari turn. Ek honest assumption mere baare mein.",
+                ],
+                "Uske low-effort reply ko playful challenge mein convert karo.",
+                "hi",
+            )
+        return _local_lines(
+            "Reply options:",
+            [
+                "Haha nice? That's all? I expected a slightly better comeback from you.",
+                "Nice as in impressed, or nice as in politely judging me?",
+                "Okay, your turn. Make one honest assumption about me.",
+            ],
+            "Turn the low-effort reply into a playful challenge without chasing.",
+            "en",
+        )
+    return _local_lines(
+        "Dating/texting game plan:",
+        [
+            "Pehle boring question mat pooch. Curiosity hook ya light assumption se start kar.",
+            "Uski profile/vibe se ek playful assumption bana.",
+            "Reply aaye to 'why?' pooch aur uske answer par light tease kar.",
+            "Energy low ho ya rejection ho to respectfully disengage.",
+        ],
+        "Curiosity -> assumption -> why -> light tease -> imagination game.",
+        "hi" if lang == "hi" else "en",
+    )
+
+def _local_generate_system_context(last_user: str) -> str:
+    lang = _local_detect_language(last_user)
+    text = (
+        "You are Jazz AI V1.0, a private Qwen-backed local LLM. "
+        "Answer the current user directly. Default to Hindi/Hinglish when unclear. "
+        "If the user clearly uses another language, reply in that same language. "
+        "For dating or texting advice, be bold, playful, concise, and respectful. "
+        "Use curiosity openers, light assumptions, question reframing, and imagination games. "
+        "Never pressure after rejection; tell the user to disengage respectfully. "
+        "Do not repeat role labels."
+    )
+    if lang == "hi":
+        text += " Reply in natural Hindi/Hinglish."
+    return text
+
 def _messages_to_local_generate_prompt(messages: List[Dict]) -> str:
-    lines: List[str] = []
+    lines: List[str] = ["System: " + _local_generate_system_context(_local_generate_last_user_text(messages))]
     for msg in messages[-8:]:
         role = str(msg.get("role") or "user").lower()
         if role == "system":
@@ -2418,6 +2582,10 @@ async def _local_generate_text_once(messages: List[Dict], row: Dict[str, Any],
     math_answer = _local_generate_simple_math_answer(messages)
     if math_answer:
         return math_answer, _canonical_model_id(row["id"]), row["model_name"]
+
+    coach_answer = _local_generate_coach_answer(messages)
+    if coach_answer:
+        return coach_answer, _canonical_model_id(row["id"]), row["model_name"]
 
     def _call() -> str:
         payload = json.dumps({

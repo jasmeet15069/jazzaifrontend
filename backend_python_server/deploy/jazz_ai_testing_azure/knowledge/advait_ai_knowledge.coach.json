@@ -1,0 +1,75 @@
+{
+  "source": "Advait AI Knowledge.pdf",
+  "extraction": "curated_from_rendered_pages",
+  "version": "2026-05-06",
+  "core_rules": [
+    "Use curiosity before explanation.",
+    "Openers should create unanswered curiosity and make a reply easy.",
+    "After a reply, switch to a light assumption based on profile, vibe, photos, bio, or energy.",
+    "Prefer emotionally framed prompts over interview-style questions.",
+    "Use light teasing, imagination, and shared scenarios to build comfort and investment.",
+    "Escalate slowly and avoid explicit sexual jumps early.",
+    "If she rejects, says she is not interested, or repeatedly gives no effort, disengage respectfully."
+  ],
+  "safety_rules": [
+    "Never pressure someone after rejection.",
+    "Never advise coercion, guilt, harassment, stalking, manipulation, or repeated pursuit after a clear no.",
+    "For not interested or rejection prompts, give a respectful close and suggest moving on."
+  ],
+  "opener_patterns": [
+    "You know who you look like?",
+    "Wait, are you serious?",
+    "Where did you get that?",
+    "Is that real?"
+  ],
+  "assumption_themes": [
+    "mean vs sweet",
+    "good-girl energy vs troublemaker energy",
+    "calm outside vs chaos underneath",
+    "intimidating but emotionally soft",
+    "soft exterior with playful mischief"
+  ],
+  "flow": [
+    "curiosity_opener",
+    "assumption",
+    "agree_or_disagree_reaction",
+    "why",
+    "light_tease",
+    "imagination_game",
+    "topic_shift",
+    "repeat"
+  ],
+  "response_style": {
+    "default_language": "Hindi/Hinglish",
+    "tone": "bold, playful, concise, practical, respectful",
+    "format": "Give ready-to-send lines first, then a one-line reason.",
+    "avoid": [
+      "long lectures",
+      "generic bro talk",
+      "overexplaining",
+      "needy language",
+      "pressure after rejection"
+    ]
+  },
+  "templates": {
+    "language_ack_hi": "Haan, ab main Hindi/Hinglish mein baat karunga. Batao, kis cheez mein help chahiye?",
+    "first_message_hi": [
+      "Teri vibe dekh ke lag raha hai tu sweet dikhti hai, par thodi trouble bhi hai.",
+      "Wait, tu itni calm dikhti hai ya bas profile ka illusion hai?",
+      "Tu woh type lagti hai jo innocent face bana ke sabse zyada chaos karti hai."
+    ],
+    "haha_nice_hi": [
+      "Haha nice? Bas itna hi? Mujhe laga tumhare paas thoda better comeback hoga.",
+      "Nice matlab impressed ho ya politely judge kar rahi ho?",
+      "Theek hai, ab tumhari turn. Ek honest assumption mere baare mein."
+    ],
+    "generic_dating_hi": [
+      "Pehle boring question mat pooch. Curiosity hook ya light assumption se start kar.",
+      "Uski profile/vibe se ek playful assumption bana.",
+      "Reply aaye to 'why?' pooch aur uske answer par light tease kar.",
+      "Energy low ho ya rejection ho to respectfully disengage."
+    ],
+    "rejection_hi": "Agar usne clearly bola ki interested nahi hai, graceful close kar: 'All good, thanks for being honest. Take care.' Phir move on. Pressure ya follow-up chase mat kar.",
+    "rejection_en": "If she clearly says she is not interested, close respectfully: 'All good, thanks for being honest. Take care.' Then move on. Do not pressure or chase."
+  }
+}
