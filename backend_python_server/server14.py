@@ -2332,12 +2332,92 @@ def _strip_local_generate_echo(text: str, prompt: str) -> str:
     out = re.sub(r"^(?:Assistant:|assistant:)\s*", "", out).strip()
     return out or (text or "").strip()
 
+def _local_generate_last_user_text(messages: List[Dict]) -> str:
+    for msg in reversed(messages):
+        if str(msg.get("role") or "").lower() == "user":
+            text = _message_content_to_text(msg.get("content")).strip()
+            if text:
+                return text
+    return ""
+
+def _local_safe_math_eval(node: ast.AST) -> float:
+    if isinstance(node, ast.Expression):
+        return _local_safe_math_eval(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.UnaryOp):
+        value = _local_safe_math_eval(node.operand)
+        if isinstance(node.op, ast.UAdd):
+            return value
+        if isinstance(node.op, ast.USub):
+            return -value
+    if isinstance(node, ast.BinOp):
+        left = _local_safe_math_eval(node.left)
+        right = _local_safe_math_eval(node.right)
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        if isinstance(node.op, ast.Div):
+            if right == 0:
+                raise ZeroDivisionError("division by zero")
+            return left / right
+        if isinstance(node.op, ast.FloorDiv):
+            if right == 0:
+                raise ZeroDivisionError("division by zero")
+            return left // right
+        if isinstance(node.op, ast.Mod):
+            if right == 0:
+                raise ZeroDivisionError("division by zero")
+            return left % right
+        if isinstance(node.op, ast.Pow):
+            if abs(right) > 12:
+                raise ValueError("exponent too large")
+            return left ** right
+    raise ValueError("unsupported math expression")
+
+def _local_format_math_number(value: float) -> str:
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, float):
+        return f"{value:.10g}"
+    return str(value)
+
+def _local_generate_simple_math_answer(messages: List[Dict]) -> Optional[str]:
+    text = _local_generate_last_user_text(messages).strip().lower()
+    if not text:
+        return None
+    text = text.replace("×", "*").replace("÷", "/").replace("−", "-")
+    text = re.sub(r"\b(what\s+is|what's|calculate|compute|solve|please|answer|equals|equal\s+to)\b", " ", text)
+    text = text.replace("?", " ").replace("=", " ")
+    text = re.sub(r"\bplus\b", "+", text)
+    text = re.sub(r"\bminus\b", "-", text)
+    text = re.sub(r"\btimes\b|\bmultiplied\s+by\b", "*", text)
+    text = re.sub(r"\bdivided\s+by\b", "/", text)
+    expr = re.sub(r"\s+", " ", text).strip()
+    if not re.fullmatch(r"[0-9\s\.\+\-\*\/%\(\)]{3,}", expr):
+        return None
+    if not re.search(r"[0-9]\s*[\+\-\*\/%]\s*[0-9]", expr):
+        return None
+    try:
+        result = _local_safe_math_eval(ast.parse(expr, mode="eval"))
+    except ZeroDivisionError:
+        return "Cannot divide by zero."
+    except Exception:
+        return None
+    return f"{expr} = {_local_format_math_number(result)}"
+
 async def _local_generate_text_once(messages: List[Dict], row: Dict[str, Any],
                                     max_tokens: int = 512) -> Tuple[str, str, str]:
     base = (row["base_url"] or _PROVIDER_DEFAULTS["local_generate"]).rstrip("/")
     prompt = _messages_to_local_generate_prompt(messages)
     row_limit = int(row.get("max_output_tokens") or 48)
     token_limit = max(8, min(int(max_tokens or row_limit), row_limit, 128))
+    math_answer = _local_generate_simple_math_answer(messages)
+    if math_answer:
+        return math_answer, _canonical_model_id(row["id"]), row["model_name"]
 
     def _call() -> str:
         payload = json.dumps({

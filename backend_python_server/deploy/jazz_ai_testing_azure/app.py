@@ -1,6 +1,8 @@
 import os
 import re
 import time
+import ast
+import operator
 from pathlib import Path
 from typing import List, Optional
 
@@ -54,6 +56,67 @@ def _load_training_examples(path: str) -> List[dict]:
 
 
 TRAINING_EXAMPLES = _load_training_examples(TRAINING_EXAMPLES_FILE)
+
+_BIN_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+}
+_UNARY_OPS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+
+
+def _safe_eval_math(node):
+    if isinstance(node, ast.Expression):
+        return _safe_eval_math(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY_OPS:
+        return _UNARY_OPS[type(node.op)](_safe_eval_math(node.operand))
+    if isinstance(node, ast.BinOp) and type(node.op) in _BIN_OPS:
+        left = _safe_eval_math(node.left)
+        right = _safe_eval_math(node.right)
+        if isinstance(node.op, ast.Pow) and abs(right) > 12:
+            raise ValueError("Exponent too large")
+        if isinstance(node.op, (ast.Div, ast.FloorDiv, ast.Mod)) and right == 0:
+            raise ZeroDivisionError("division by zero")
+        return _BIN_OPS[type(node.op)](left, right)
+    raise ValueError("Unsupported expression")
+
+
+def _format_number(value) -> str:
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, float):
+        return f"{value:.10g}"
+    return str(value)
+
+
+def _simple_math_answer(user_text: str) -> Optional[str]:
+    text = (user_text or "").strip().lower()
+    text = text.replace("×", "*").replace("÷", "/").replace("−", "-")
+    text = re.sub(r"\b(what\s+is|what's|calculate|compute|solve|please|answer|equals|equal\s+to)\b", " ", text)
+    text = text.replace("?", " ").replace("=", " ")
+    text = re.sub(r"\bplus\b", "+", text)
+    text = re.sub(r"\bminus\b", "-", text)
+    text = re.sub(r"\btimes\b|\bmultiplied\s+by\b", "*", text)
+    text = re.sub(r"\bdivided\s+by\b", "/", text)
+    expr = re.sub(r"\s+", " ", text).strip()
+    if not re.fullmatch(r"[0-9\s\.\+\-\*\/%\(\)]{3,}", expr):
+        return None
+    if not re.search(r"[0-9]\s*[\+\-\*\/%]\s*[0-9]", expr):
+        return None
+    try:
+        tree = ast.parse(expr, mode="eval")
+        result = _safe_eval_math(tree)
+    except Exception as exc:
+        if isinstance(exc, ZeroDivisionError):
+            return "Cannot divide by zero."
+        return None
+    return f"{expr} = {_format_number(result)}"
 
 
 class GenerateRequest(BaseModel):
@@ -172,6 +235,7 @@ def health():
         "loaded": True,
         "load_seconds": round(loaded_at - load_started, 2),
         "training_examples": len(TRAINING_EXAMPLES),
+        "calculator": True,
     }
 
 
@@ -180,7 +244,12 @@ def generate(request: GenerateRequest):
     if request.seed is not None:
         torch.manual_seed(request.seed)
 
-    example_answer = _training_example_answer(_last_user_text(request.prompt))
+    user_text = _last_user_text(request.prompt)
+    math_answer = _simple_math_answer(user_text)
+    if math_answer:
+        return {"text": math_answer, "model_id": MODEL_ID, "source": "calculator"}
+
+    example_answer = _training_example_answer(user_text)
     if example_answer:
         return {
             "text": example_answer,
