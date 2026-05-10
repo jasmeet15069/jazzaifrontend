@@ -854,6 +854,7 @@ try {
       <nav style="padding:10px 8px;flex-shrink:0">
         <button class="nav-item sidebar-new-chat" type="button" onclick="newSession()"><span class="icon">+</span>New Chat</button>
         <a class="nav-item" data-page="chat"        onclick="navigate('chat')">       <span class="icon">💬</span>Chat</a>
+        <a class="nav-item" data-page="jarvis"      onclick="location.href='/jarvis'"> <span class="icon">JV</span>Jarvis</a>
         <a class="nav-item" data-page="agents"      data-feature-key="agents" onclick="navigate('agents')">     <span class="icon">🤖</span>Agent Jobs</a>
         <a class="nav-item" data-page="playground"  data-feature-key="playground" onclick="navigate('playground')"> <span class="icon">⚡</span>Playground</a>
         <a class="nav-item" data-page="multimodel"  data-feature-key="multimodel" onclick="navigate('multimodel')"> <span class="icon">MM</span>Multi-Model</a>
@@ -2799,10 +2800,26 @@ function removePendingPaste(id) {
 function safePasteBody(text = '') {
   return String(text || '').replace(/<\/JAZZ_PASTED_CONTENT>/gi, '<\\/JAZZ_PASTED_CONTENT>');
 }
+function pasteLooksLikeCode(text = '') {
+  const raw = String(text || '');
+  if (!raw.trim()) return false;
+  if (/```|Traceback|SyntaxError|TypeError|ReferenceError|SFTTrainer|AutoTokenizer|BitsAndBytesConfig|torch|transformers|Dataset|notebook|ipynb/i.test(raw)) return true;
+  if (/\b(def|class|import|from|const|let|var|function|export|return|async|await|try|except|finally|subprocess|Path)\b/.test(raw)) return true;
+  const lines = raw.split(/\r?\n/).slice(0, 400);
+  const codeish = lines.filter(line => /[{};]|^\s*(def|class|import|from|const|let|var|function|return|if|for|while|try|except)\b/.test(line)).length;
+  return codeish >= 5;
+}
+function defaultPromptForPastes(pastes = []) {
+  const combined = (pastes || []).map(p => p?.text || '').join('\n').slice(0, 30000);
+  if (pasteLooksLikeCode(combined)) {
+    return 'Review and fix the pasted code/notebook. Identify the exact problem, explain why it fails, and provide corrected code or a precise patch.';
+  }
+  return 'Please analyze the pasted content.';
+}
 function buildMessageWithPastes(baseMessage = '', pastes = []) {
   const prompt = String(baseMessage || '').trim();
   if (!pastes.length) return prompt;
-  const head = prompt || 'Please analyze the pasted content.';
+  const head = prompt || defaultPromptForPastes(pastes);
   const sections = pastes.map((p, i) => {
     const stats = p.stats || pasteStats(p.text);
     const title = p.title || `Pasted content ${i + 1}`;
@@ -3977,9 +3994,117 @@ function wantsLatexCompile(text = '') {
   const s = String(text || '').toLowerCase();
   return looksLikeLatexText(text) && /\b(convert|compile|compiler|render|export|download|save|generate|create|make)\b/.test(s) && /\b(pdf|latex|tex|overleaf)\b/.test(s);
 }
+const CODE_EXT_PATTERN = 'py|js|mjs|cjs|ts|tsx|jsx|css|scss|html|json|md|txt|java|kt|kts|c|cpp|h|hpp|cs|go|rs|php|rb|swift|sh|bash|ps1|sql|xml|yml|yaml|toml|ini|env';
+const CODE_LANG_EXT = {
+  python:'py', py:'py', javascript:'js', js:'js', node:'js', mjs:'mjs', cjs:'cjs',
+  typescript:'ts', ts:'ts', tsx:'tsx', jsx:'jsx', react:'tsx', nextjs:'tsx', 'next.js':'tsx',
+  html:'html', css:'css', scss:'scss', json:'json', markdown:'md', md:'md', text:'txt',
+  java:'java', kotlin:'kt', kt:'kt', kts:'kts', c:'c', cpp:'cpp', 'c++':'cpp', h:'h', hpp:'hpp',
+  csharp:'cs', 'c#':'cs', cs:'cs', go:'go', golang:'go', rust:'rs', rs:'rs', php:'php',
+  ruby:'rb', rb:'rb', swift:'swift', shell:'sh', bash:'sh', sh:'sh', powershell:'ps1', ps1:'ps1',
+  sql:'sql', xml:'xml', yaml:'yaml', yml:'yml', toml:'toml', ini:'ini', env:'env', dockerfile:'dockerfile'
+};
+const CODE_DEFAULT_NAMES = {
+  py:'app.py', js:'script.js', mjs:'index.mjs', cjs:'index.cjs', ts:'index.ts', tsx:'App.tsx', jsx:'App.jsx',
+  css:'styles.css', scss:'styles.scss', html:'index.html', json:'data.json', md:'README.md', txt:'notes.txt',
+  java:'Main.java', kt:'Main.kt', kts:'script.kts', c:'main.c', cpp:'main.cpp', h:'main.h', hpp:'main.hpp',
+  cs:'Program.cs', go:'main.go', rs:'main.rs', php:'index.php', rb:'app.rb', swift:'main.swift',
+  sh:'script.sh', ps1:'script.ps1', sql:'query.sql', xml:'document.xml', yml:'config.yml',
+  yaml:'config.yaml', toml:'config.toml', ini:'config.ini', env:'.env', dockerfile:'Dockerfile'
+};
+function isCodingArtifactRequest(text = '') {
+  const s = String(text || '').toLowerCase();
+  if (/<jazz_pasted_content\b/.test(s)) return true;
+  return /\b(code|coding|script|program|app|component|api|endpoint|route|function|class|bug|debug|fix|implement|build|create|make|generate|refactor|python|javascript|typescript|react|next\.?js|node|express|fastapi|html|css|sql|dockerfile|project)\b/.test(s);
+}
+function codeExtFromLang(lang = '', fallback = 'txt') {
+  const raw = String(lang || '').trim().toLowerCase().replace(/^language-/, '').split(/\s+/)[0];
+  return CODE_LANG_EXT[raw] || fallback || 'txt';
+}
+function extFromFilename(name = '') {
+  const clean = String(name || '').trim();
+  if (/^dockerfile$/i.test(clean)) return 'dockerfile';
+  const m = clean.match(new RegExp('\\.(' + CODE_EXT_PATTERN + ')$', 'i'));
+  return m ? codeExtFromLang(m[1], m[1].toLowerCase()) : '';
+}
+function cleanCodeFilename(name = '', ext = 'txt', index = 1) {
+  let base = String(name || '').trim().replace(/[`"'<>]/g, '').replace(/[\\/:]+/g, '_').replace(/\s+/g, '_').replace(/[^A-Za-z0-9._ -]/g, '_').replace(/^[._ -]+|[._ -]+$/g, '').slice(0, 90);
+  const finalExt = ext || extFromFilename(base) || 'txt';
+  if (!base || /^file$/i.test(base)) base = CODE_DEFAULT_NAMES[finalExt] || `code_${index}.${finalExt}`;
+  if (finalExt === 'dockerfile') return /^dockerfile$/i.test(base) ? 'Dockerfile' : `Dockerfile_${index}`;
+  if (!base.toLowerCase().endsWith('.' + finalExt)) base = base.replace(/\.[A-Za-z0-9]{1,8}$/i, '') + '.' + finalExt;
+  return base;
+}
+function inferCodeFilename(lang, info, code, userPrompt, before, index, total) {
+  const extRx = CODE_EXT_PATTERN;
+  const infoText = String(info || '');
+  const explicit = infoText.match(new RegExp("(?:file(?:name)?|path)\\s*=\\s*[\"']?([A-Za-z0-9._/\\\\ -]+\\.(?:" + extRx + ")|Dockerfile)", 'i'))
+    || infoText.match(new RegExp('(?:^|\\s)([A-Za-z0-9._/\\\\ -]+\\.(?:' + extRx + ')|Dockerfile)(?:\\s|$)', 'i'))
+    || String(before || '').match(new RegExp('(?:File|Path|Filename)\\s*:\\s*`?([A-Za-z0-9._/\\\\ -]+\\.(?:' + extRx + ')|Dockerfile)`?\\s*$', 'i'))
+    || String(before || '').match(new RegExp('(?:^|\\n)\\s*(?:#{1,6}\\s*)?`?([A-Za-z0-9._/\\\\ -]+\\.(?:' + extRx + ')|Dockerfile)`?\\s*:?\\s*$', 'i'))
+    || String(userPrompt || '').match(new RegExp("(?:called|named|filename|file name|save as|as)\\s+[\"'`]?([A-Za-z0-9._/\\\\ -]+\\.(?:" + extRx + ")|Dockerfile)", 'i'));
+  const explicitName = explicit?.[1]?.trim() || '';
+  const explicitExt = extFromFilename(explicitName);
+  const langExt = codeExtFromLang(lang, explicitExt || '');
+  let ext = explicitExt || langExt || 'txt';
+  if (!explicitExt && ext === 'txt') {
+    if (/^\s*<!doctype html|^\s*<html[\s>]/i.test(code)) ext = 'html';
+    else if (/^\s*[{[]/.test(code) && /[}\]]\s*$/.test(code)) ext = 'json';
+    else if (/^\s*import\s+React|from\s+['"]react['"]|export\s+default\s+function\s+[A-Z]/m.test(code)) ext = 'tsx';
+    else if (/^\s*(from\s+\w+\s+import|import\s+\w+|def\s+\w+\(|class\s+\w+)/m.test(code)) ext = 'py';
+    else if (/^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER)\b/im.test(code)) ext = 'sql';
+  }
+  const fallback = CODE_DEFAULT_NAMES[ext] || `code_${index}.${ext}`;
+  const name = explicitName || (total > 1 ? fallback.replace(/(\.[^.]+)$/, `_${index}$1`) : fallback);
+  return { filename: cleanCodeFilename(name, ext, index), ext };
+}
+function extractCodeArtifactsFromResponse(userPrompt, assistantText) {
+  const text = String(assistantText || '');
+  const artifacts = [];
+  const rx = /```([^\n`]*)\n([\s\S]*?)```/g;
+  let match;
+  while ((match = rx.exec(text)) && artifacts.length < 8) {
+    const info = (match[1] || '').trim();
+    let code = String(match[2] || '').replace(/\s+$/, '');
+    if (code.length < 30 || !/\n/.test(code)) continue;
+    const before = text.slice(Math.max(0, match.index - 260), match.index);
+    const lang = info.split(/\s+/)[0] || '';
+    const meta = inferCodeFilename(lang, info, code, userPrompt, before, artifacts.length + 1, 1);
+    artifacts.push({ ...meta, content: code });
+  }
+  const used = new Set();
+  return artifacts.map((a, idx) => {
+    let name = a.filename;
+    const lower = name.toLowerCase();
+    if (used.has(lower)) name = cleanCodeFilename(name.replace(/(\.[^.]+)$/, `_${idx + 1}$1`), a.ext, idx + 1);
+    used.add(name.toLowerCase());
+    return { ...a, filename: name };
+  });
+}
+async function maybeGenerateCodeFilesFromResponse(userPrompt, assistantText) {
+  if (!isCodingArtifactRequest(userPrompt)) return false;
+  const artifacts = extractCodeArtifactsFromResponse(userPrompt, assistantText);
+  if (!artifacts.length) return false;
+  const saved = [];
+  for (const artifact of artifacts) {
+    const result = await post('/files/generate', {
+      prompt: userPrompt,
+      content: artifact.content,
+      file_type: artifact.ext,
+      filename: artifact.filename,
+      raw_code: true
+    });
+    saved.push({ ...result, generated:true });
+  }
+  addFilesToLibrary(saved);
+  toast(`Generated ${saved.length} code file${saved.length === 1 ? '' : 's'}`, 'ok');
+  if (!S.filesPanelOpen) openFilesPanel();
+  return true;
+}
 async function maybeGenerateFileFromResponse(userPrompt, assistantText) {
-  const intent = detectGeneratedFileRequest(userPrompt);
   const content = String(assistantText || '').trim();
+  if (await maybeGenerateCodeFilesFromResponse(userPrompt, content)) return;
+  const intent = detectGeneratedFileRequest(userPrompt);
   if (!intent || (!content && !userPrompt) || content.startsWith('[')) return;
   try {
     const latexSource = looksLikeLatexText(userPrompt) ? extractLatexSourceFromText(userPrompt)
